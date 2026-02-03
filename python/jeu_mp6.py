@@ -5,6 +5,7 @@ TILE_FLOOR = [(0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3), (1, 3), (2
 TILE_FLOOR_AIR = [(0, 4), (1, 4), (2, 4)]
 TILE_STAIR_RIGHT = [(6, 1)]
 TILE_STAIR_LEFT = [(5, 1)]
+TILE_OBJECT = [(0, 6)]
 TILE_STAIRS = TILE_STAIR_LEFT + TILE_STAIR_RIGHT
 TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR
 TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT
@@ -27,14 +28,17 @@ class App:
         pyxel.load('4.pyxres')
         self.physic = Physic()
         self.player = Player(self.physic, 15, 15)
+        self.camera = Camera()
         pyxel.run(self.update, self.draw)
+
 
     def update(self):
         self.player.update()
+        self.camera.update(self.player.x, self.player.y)
+
 
     def draw(self):
-        pyxel.cls(0)
-        pyxel.bltm(0, 0, 0, 0, 0, 128, 128)
+        self.camera.draw()
         self.player.draw()
 
 
@@ -79,6 +83,8 @@ class Player:
         self.SPEED_Y = 1
         self.jump_speed = 3
         self.gravity = 0.2
+        self.have_key = False
+        self.world = 0
 
 
 
@@ -208,6 +214,27 @@ class Player:
                 self.y = new_y
 
 
+        
+        # grab an object
+        tm = pyxel.tilemaps[self.world]
+        if tile_player in TILE_OBJECT:
+            if tile_player == (0, 6):
+                tm.set(
+                    int(self.x //8),
+                    int(self.y //8),
+                    ["0000"]
+                )
+                self.have_key = True
+                for y in range(tm.height):
+                    for x in range(tm.width):
+                        tile = tm.pget(x, y)
+                        if tile == (2, 5):
+                            tm.set(x, y, ["0105"])
+                        elif tile == (2, 6):
+                            tm.set(x, y, ["0106"])
+        
+
+
 
 
     
@@ -232,6 +259,44 @@ class Player:
 
 
 
+
+
+
+
+
+##### _____ Camera _____ #####
+
+class Camera:
+    def __init__(self):
+        self.x = 0
+        self.y = 0
+        self.map = 0
+
+
+    def update(self, p_x:int, p_y:int):
+        # for x
+        if WORLD_COORDINATES[0][0] + 64 < p_x < WORLD_COORDINATES[0][1] - 56:
+            self.x = p_x - 64
+        
+        # for y
+        if WORLD_COORDINATES[1][0] + 64 < p_y < WORLD_COORDINATES[1][1] - 56:
+            self.y = p_y - 64
+
+
+        pyxel.camera(self.x, self.y)
+
+
+    def draw(self):
+        pyxel.cls(0)
+        pyxel.bltm(
+            self.x,
+            self.y,
+            self.map,
+            self.x,
+            self.y,
+            128,
+            128
+        )
 
 
 
