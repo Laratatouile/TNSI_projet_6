@@ -303,5 +303,21 @@ class Camera:
 
 
 
+
+
+
+
+##### _____ UI _____ #####
+class UI:
+    def __init__(self, app:App):
+        self.app = app
+        self.list_objects = []
+        self.life = 5
+        self.coins = 0
+
+
+    def update():
+        pass
+        
 App()
 
