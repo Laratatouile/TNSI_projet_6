@@ -29,17 +29,20 @@ class App:
         self.physic = Physic()
         self.player = Player(self.physic, 15, 15)
         self.camera = Camera()
+        self.ui = UI(self)
         pyxel.run(self.update, self.draw)
 
 
     def update(self):
         self.player.update()
         self.camera.update(self.player.x, self.player.y)
+        self.ui.update()
 
 
     def draw(self):
         self.camera.draw()
         self.player.draw()
+        self.ui.draw()
 
 
 
@@ -85,6 +88,8 @@ class Player:
         self.gravity = 0.2
         self.have_key = False
         self.world = 0
+        self.coins = 0
+        self.life = 5
 
 
 
@@ -275,8 +280,8 @@ class Camera:
 
     def update(self, p_x:int, p_y:int):
         # for x
-        if WORLD_COORDINATES[0][0] + 64 < p_x < WORLD_COORDINATES[0][1] - 56:
-            self.x = p_x - 64
+        if WORLD_COORDINATES[0][0] + 54 < p_x < WORLD_COORDINATES[0][1] - 46:
+            self.x = p_x - 54
         
         # for y
         if WORLD_COORDINATES[1][0] + 64 < p_y < WORLD_COORDINATES[1][1] - 56:
@@ -316,8 +321,32 @@ class UI:
         self.coins = 0
 
 
-    def update():
-        pass
+    def update(self):
+        if self.app.player.have_key and "key" not in self.list_objects:
+            self.list_objects.append("key")
+        self.life = self.app.player.life
+        self.coins = self.app.player.coins
+        self.x = self.app.camera.x + 98
+        self.y = self.app.camera.y
+
+
+    
+    def draw(self):
+        pyxel.rect(
+            self.x,
+            self.y,
+            30,
+            128,
+            0
+        )
+        pyxel.text(
+            self.x + 3,
+            self.y + 3,
+            f"Vie: {self.life}",
+            4
+        )
+        for object in self.list_objects:
+            print("ok")
         
 App()
 
