@@ -6,6 +6,8 @@ TILE_FLOOR_AIR = [(0, 4), (1, 4), (2, 4)]
 TILE_STAIR_RIGHT = [(6, 1)]
 TILE_STAIR_LEFT = [(5, 1)]
 TILE_OBJECT = [(0, 6)]
+TILE_DOOR_CLOSE = [(2, 5), (2, 6)]
+TILE_DOOR_OPEN = [(1, 5), (1, 6)]
 TILE_STAIRS = TILE_STAIR_LEFT + TILE_STAIR_RIGHT
 TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR
 TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT
@@ -30,20 +32,27 @@ class App:
         self.player = Player(self.physic, 15, 15)
         self.camera = Camera()
         self.ui = UI(self)
+        self.start_menu = StartMenu()
+        self.whereami = "start menu"
         pyxel.run(self.update, self.draw)
 
 
     def update(self):
-        self.player.update()
-        self.camera.update(self.player.x, self.player.y)
-        self.ui.update()
+        if self.whereami == "game":
+            self.player.update()
+            self.camera.update(self.player.x, self.player.y)
+            self.ui.update()
+        elif self.whereami == "start menu":
+            self.whereami = self.start_menu.update()
 
 
     def draw(self):
-        self.camera.draw()
-        self.player.draw()
-        self.ui.draw()
-
+        if self.whereami == "game":
+            self.camera.draw()
+            self.player.draw()
+            self.ui.draw()
+        if self.whereami == "start menu":
+            self.start_menu.draw()
 
 
 
@@ -223,21 +232,28 @@ class Player:
         # grab an object
         tm = pyxel.tilemaps[self.world]
         if tile_player in TILE_OBJECT:
+            tm.set(
+                int(self.x //8),
+                int(self.y //8),
+                ["0000"]
+            )
             if tile_player == (0, 6):
-                tm.set(
-                    int(self.x //8),
-                    int(self.y //8),
-                    ["0000"]
-                )
                 self.have_key = True
-                for y in range(tm.height):
-                    for x in range(tm.width):
-                        tile = tm.pget(x, y)
-                        if tile == (2, 5):
-                            tm.set(x, y, ["0105"])
-                        elif tile == (2, 6):
-                            tm.set(x, y, ["0106"])
+
         
+        # use an object
+        if pyxel.btnp(pyxel.KEY_E):
+            if tile_player in TILE_DOOR_CLOSE or tile_right in TILE_DOOR_CLOSE:
+                if self.have_key:
+                    for y in range(WORLD_COORDINATES[1][1] - WORLD_COORDINATES[1][0]):
+                        for x in range(WORLD_COORDINATES[0][1] - WORLD_COORDINATES[0][0]):
+                            tile = tm.pget(x, y)
+                            if tile == (2, 5):
+                                tm.set(x, y, ["0105"])
+                            elif tile == (2, 6):
+                                tm.set(x, y, ["0106"])
+                    self.have_key = False
+    
 
 
 
@@ -319,11 +335,18 @@ class UI:
         self.list_objects = []
         self.life = 5
         self.coins = 0
+        self.x = self.app.camera.x + 98
+        self.y = self.app.camera.y
+        self.pos_objects = [(3, 12)]
 
 
     def update(self):
+        # for the key
         if self.app.player.have_key and "key" not in self.list_objects:
             self.list_objects.append("key")
+        if not self.app.player.have_key and "key" in self.list_objects:
+            self.list_objects.remove("key")
+        
         self.life = self.app.player.life
         self.coins = self.app.player.coins
         self.x = self.app.camera.x + 98
@@ -345,8 +368,93 @@ class UI:
             f"Vie: {self.life}",
             4
         )
-        for object in self.list_objects:
-            print("ok")
+        for i, objet in enumerate(self.list_objects):
+            if objet == "key":
+                pyxel.blt(
+                    self.x + self.pos_objects[i][0],
+                    self.y + self.pos_objects[i][1],
+                    0,
+                    0,
+                    48,
+                    8,
+                    8,
+                    5
+                )
+
+
+
+
+
+
+
+
+##### _____ Start Menu _____ #####
+
+class StartMenu:
+    def __init__(self):
+        self.play = False
+        self.bouton_play = Button(30, 10, "jouer")
+
+    
+    def update(self):
+        if self.bouton_play.update():
+            return "play"
         
+
+        return "start menu"
+        
+
+    def draw(self):
+        self.bouton_play.draw()
+        
+
+
+
+
+
+
+
+### ___ subclass Button ___ ###
+
+class Button:
+    def __init__(self, x:int, y:int, text:str):
+        self.x = x
+        self.y = y
+        self.text = text
+        self.w = 50
+        self.h = 16
+        self.border = 2
+
+    def update(self) -> bool:
+        if pyxel.MOUSE_BUTTON_LEFT:
+            if self.x <= pyxel.mouse_x <= self.x + self.w:
+                if self.y <= pyxel.mouse_y <= self.y + self.h:
+                    return True
+        return False
+
+    def draw(self) -> None:
+        pyxel.rect(
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            2
+        )
+        pyxel.rect(
+            self.x + self.border,
+            self.y + self.border,
+            self.w - self.border*2,
+            self.h - self.border*2,
+            11
+        )
+        pyxel.text(
+            self.x + self.border + 2,
+            self.y + self.border + 3,
+            self.text,
+            0
+        )
+
+
+
 App()
 
