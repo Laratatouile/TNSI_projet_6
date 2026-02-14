@@ -1,4 +1,5 @@
 import pyxel
+import random
 
 # tiles coordinates
 TILE_FLOOR = [(0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3), (1, 3), (2, 3), (5, 2), (6, 2), (5, 3), (6, 3)]
@@ -8,6 +9,7 @@ TILE_STAIR_LEFT = [(5, 1)]
 TILE_OBJECT = [(0, 6)]
 TILE_DOOR_CLOSE = [(2, 5), (2, 6)]
 TILE_DOOR_OPEN = [(1, 5), (1, 6)]
+
 TILE_STAIRS = TILE_STAIR_LEFT + TILE_STAIR_RIGHT
 TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR
 TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT
@@ -26,33 +28,68 @@ class App:
         )
         pyxel.fullscreen(True)
 
-
         pyxel.load('4.pyxres')
-        self.physic = Physic()
-        self.player = Player(self.physic, 15, 15)
-        self.camera = Camera()
-        self.ui = UI(self)
-        self.start_menu = StartMenu()
+
+        # variables
+        self.pos_monsters = {
+            0: [],
+            1: [(104, 88)]
+        }
+        pos_player = (15, 15)
         self.whereami = "start menu"
+        self.world = 0      # the tilemap
+
+        # instances objects
+        self.physic = Physic(pos_player, self.world)
+        self.player = Player(self.physic, pos_player, self.world)
+        self.camera = Camera(self.world)
+        self.ui = UI(self)
+        self.fake_player = FakePlayer(self.world)
+        self.start_menu = StartMenu()
+        self.monsters = Monsters(self.pos_monsters[self.world], self.physic)
+        
+        # run the app
         pyxel.run(self.update, self.draw)
 
 
+
+
     def update(self):
+        # if we are in the game
         if self.whereami == "game":
             self.player.update()
             self.camera.update(self.player.x, self.player.y)
+            self.monsters.update()
             self.ui.update()
+        
+        # if we are in the start menu
         elif self.whereami == "start menu":
-            self.whereami = self.start_menu.update()
+            self.whereami, self.world = self.start_menu.update()
+            self.fake_player.update()
+
+            # update variables
+            self.player.world = self.world
+            self.physic.world = self.world
+            self.camera.world = self.world
+            self.monsters = Monsters(self.pos_monsters[self.world], self.physic)
+
+
+
 
 
     def draw(self):
+        # if we are in the game
         if self.whereami == "game":
             self.camera.draw()
             self.player.draw()
+            self.monsters.draw()
             self.ui.draw()
-        if self.whereami == "start menu":
+
+        # if we are in the menu
+        elif self.whereami == "start menu":
+            self.camera.draw()
             self.start_menu.draw()
+            self.fake_player.draw()
 
 
 
@@ -64,16 +101,56 @@ class App:
 ##### _____ Physics _____ #####
 
 class Physic:
-    def __init__(self):
-        self.gravity = 0.5
+    """ this class is used to have things ralative to many things """
+
+    def __init__(self, pos_player:tuple, world:int) -> None:
+        """ initialise the class """
+        self.pos_player = pos_player
+        self.world = world
+        self.dict_pos_monsters = {}
 
     
-    def get_tile(self, x:int, y:int):
+    def get_tile(self, x:int, y:int) -> tuple:
+        """ return the position of the tile at this position """
         if x < 0 or y < 0:
             return (0, 0)
         tile_x = x // 8
         tile_y = y // 8
-        return pyxel.tilemaps[0].pget(tile_x, tile_y)
+        return pyxel.tilemaps[self.world].pget(tile_x, tile_y)
+    
+    
+    def side_player(self, x:int) -> int:
+        """ return 0 if the player is at the left of the position
+        or 1 if the player is at right """
+        return (0 if self.pos_player[0] < x else 1)
+    
+
+    def stair_under(self, x:int, y:int) -> int:
+        """ return the position y if we are over a stair """
+        y = y //8 *8
+
+        # verify if we are on a stair
+        tile_left = self.get_tile(x, y+8)
+        tile_right = self.get_tile(x+8, y+8)
+
+        if tile_right in TILE_STAIR_RIGHT:
+            return y + 8 - (x % 8)
+
+        elif tile_left in TILE_STAIR_LEFT:
+            return y + x % 8
+        
+        return y
+    
+
+    def add_monster(self, id_m:int, pos:tuple) -> None:
+        """ add the monster in the physic class """
+        self.dict_pos_monsters[id_m] = pos
+
+    def del_monster(self, id_m:int) -> None:
+        """ delete a monster """
+        del self.dict_pos_monsters[id_m]
+
+        
 
 
 
@@ -86,23 +163,28 @@ class Physic:
 ##### _____ Player _____ #####
 
 class Player:
-    def __init__(self, physic:Physic, x:int=15, y:int=15):
+    """ class used to control the player """
+
+    def __init__(self, physic:Physic, pos_player:tuple, world:int) -> None:
+        """ initialise the player's class """
         self.physic = physic
-        self.x = x
-        self.y = y
+        self.x = pos_player[0]
+        self.y = pos_player[1]
         self.direction = 1
         self.SPEED_X = 1
         self.SPEED_Y = 1
         self.jump_speed = 3
         self.gravity = 0.2
         self.have_key = False
-        self.world = 0
+        self.world = world
         self.coins = 0
         self.life = 5
+        self.move = False
 
 
 
-    def update(self):
+    def update(self) -> None:
+        """ update the player """
         self.move = False
 
         tile_player = self.physic.get_tile(self.x, self.y)
@@ -121,7 +203,7 @@ class Player:
             for _ in range(self.SPEED_X):
                 new_x = self.x + 1
 
-                if new_x < WORLD_COORDINATES[0][1]:
+                if new_x < WORLD_COORDINATES[0][1] - 8:
                     if tile_right in TILE_STAIR_RIGHT or tile_under_right in TILE_STAIR_RIGHT:
                         self.y -= 1
                         self.x = new_x
@@ -230,8 +312,8 @@ class Player:
 
         
         # grab an object
-        tm = pyxel.tilemaps[self.world]
         if tile_player in TILE_OBJECT:
+            tm = pyxel.tilemaps[self.world]
             tm.set(
                 int(self.x //8),
                 int(self.y //8),
@@ -243,6 +325,7 @@ class Player:
         
         # use an object
         if pyxel.btnp(pyxel.KEY_E):
+            tm = pyxel.tilemaps[self.world]
             if tile_player in TILE_DOOR_CLOSE or tile_right in TILE_DOOR_CLOSE:
                 if self.have_key:
                     for y in range(WORLD_COORDINATES[1][1] - WORLD_COORDINATES[1][0]):
@@ -253,13 +336,18 @@ class Player:
                             elif tile == (2, 6):
                                 tm.set(x, y, ["0106"])
                     self.have_key = False
+
+        
+        # update position in physic
+        self.physic.pos_player = [self.x, self.y]
     
 
 
 
 
     
-    def draw(self):
+    def draw(self) -> None:
+        """ draw the player """
         list_pos = [(0, 72), (0, 80), (0, 88), (8, 72), (8, 80), (8, 88)]
         pos = list_pos[(self.number(len(list_pos)) if self.move else 0)]
 
@@ -275,7 +363,8 @@ class Player:
         )
 
     
-    def number(self, number):
+    def number(self, number:int) -> int:
+        """ return a number between 0 and number depending on the frame """
         return pyxel.frame_count // 3 % number
 
 
@@ -288,13 +377,17 @@ class Player:
 ##### _____ Camera _____ #####
 
 class Camera:
-    def __init__(self):
+    """ class used to control the camera """
+
+    def __init__(self, world:int) -> None:
+        """ initialise the camera """
         self.x = 0
         self.y = 0
-        self.map = 0
+        self.world = world
 
 
-    def update(self, p_x:int, p_y:int):
+    def update(self, p_x:int, p_y:int) -> None:
+        """ update the camera """
         # for x
         if WORLD_COORDINATES[0][0] + 54 < p_x < WORLD_COORDINATES[0][1] - 46:
             self.x = p_x - 54
@@ -307,12 +400,13 @@ class Camera:
         pyxel.camera(self.x, self.y)
 
 
-    def draw(self):
+    def draw(self) -> None:
+        """ replace the camera """
         pyxel.cls(0)
         pyxel.bltm(
             self.x,
             self.y,
-            self.map,
+            self.world,
             self.x,
             self.y,
             128,
@@ -330,7 +424,10 @@ class Camera:
 
 ##### _____ UI _____ #####
 class UI:
-    def __init__(self, app:App):
+    """ class used to diplay the UI """
+
+    def __init__(self, app:App) -> None:
+        """ initialise the UI """
         self.app = app
         self.list_objects = []
         self.life = 5
@@ -340,7 +437,8 @@ class UI:
         self.pos_objects = [(3, 12)]
 
 
-    def update(self):
+    def update(self) -> None:
+        """ update all things to display on the UI """
         # for the key
         if self.app.player.have_key and "key" not in self.list_objects:
             self.list_objects.append("key")
@@ -354,7 +452,8 @@ class UI:
 
 
     
-    def draw(self):
+    def draw(self) -> None:
+        """ display the UI """
         pyxel.rect(
             self.x,
             self.y,
@@ -391,22 +490,175 @@ class UI:
 ##### _____ Start Menu _____ #####
 
 class StartMenu:
-    def __init__(self):
+    """ the menu displayed at the start of the game """
+
+    def __init__(self) -> None:
+        """ initialise the menu and the buttons """
         self.play = False
-        self.bouton_play = Button(30, 10, "jouer")
+        self.bouton_play = Button(35, 8, "jouer")
+        self.bouton_quitter = Button(35, 50, "quitter")
+        pyxel.mouse(True)
+
+    
+    def update(self) -> str:
+        """ update the menu and return where we are """
+        # if play
+        if self.bouton_play.update():
+            pyxel.mouse(False)
+            return "game", 1
+        
+        # if we exit
+        if self.bouton_quitter.update():
+            pyxel.quit()
+        
+
+        return "start menu", 0
+        
+
+    def draw(self) -> None:
+        """ display the menu """
+        self.bouton_play.draw()
+        self.bouton_quitter.draw()
+
+    
+
+        
+
+
+
+
+
+
+
+##### _____ Fake player _____ #####
+
+class FakePlayer:
+    """ the fake player for the start menu """
+
+    def __init__(self, world:int):
+        """ initialise the fake player """
+        self.world = world
+        self.x = 0
+        self.y = 104
+        self.SPEED_X = 0
+        self.SPEED_Y = 0
+        self.direction = 1
+        self.gravity = 0
+        self.move = False
+        self.visible = False
+        self.start_time = pyxel.frame_count
+
+        # delay between the actions
+        self.delay = [40, 40, 112, 48, 3, 17, 23, 10, 20, 12, 10, 10, 70]
 
     
     def update(self):
-        if self.bouton_play.update():
-            return "play"
+        """ update the fake player """
+        time = pyxel.frame_count - self.start_time
+        if time == sum(self.delay[:0]):
+            return
         
+        if time == sum(self.delay[:1]):
+            self.visible = True
 
-        return "start menu"
-        
+        elif time == sum(self.delay[:2]):
+            self.SPEED_X = 1
+            self.direction = 1
+            self.move = True
 
-    def draw(self):
-        self.bouton_play.draw()
+        elif time == sum(self.delay[:3]):
+            self.SPEED_X = 0
+            self.SPEED_Y = -1
+            self.direction = -1
         
+        elif time == sum(self.delay[:4]):
+            self.SPEED_X = -1
+            self.SPEED_Y = 0
+            pyxel.tilemaps[self.world].set(int(self.x //8)-1, int(self.y //8), ["0000"])
+
+        elif time == sum(self.delay[:5]):
+            self.SPEED_X = -1
+            self.SPEED_Y = 0
+
+        elif time == sum(self.delay[:6]):
+            self.SPEED_X = -1
+            self.SPEED_Y = -3
+            self.gravity = 0.2
+
+        elif time == sum(self.delay[:7]):
+            self.SPEED_X = 0
+            self.SPEED_Y = 0
+            self.gravity = 0
+
+        elif time == sum(self.delay[:8]):
+            self.SPEED_X = 1
+            self.SPEED_Y = -3
+            self.gravity = 0.2
+            self.direction = 1
+
+        elif time == sum(self.delay[:9]):
+            self.SPEED_X = 0
+            self.SPEED_Y = 0
+            self.gravity = 0
+        
+        elif time == sum(self.delay[:10]):
+            self.SPEED_X = 0
+            self.SPEED_Y = -3.3
+            self.gravity = 0.2
+            self.direction = -1
+
+        elif time == sum(self.delay[:11]):
+            self.SPEED_X = -1
+            self.gravity = 0.2
+
+        elif time == sum(self.delay[:12]):
+            self.SPEED_X = -1
+            self.SPEED_Y = 0
+            self.gravity = 0
+
+        elif time > sum(self.delay):
+            self.SPEED_X = 0
+            self.SPEED_Y = 0
+            self.gravity = 0
+            self.move = False
+            pyxel.tilemaps[self.world].set(int(self.x //8), int(self.y //8), ["0000"])
+
+
+
+        # apply speeds
+        self.SPEED_Y += self.gravity
+        self.x += self.SPEED_X
+        self.y += self.SPEED_Y
+        
+            
+
+
+    def draw(self) -> None:
+        """ draw the fake player """
+        if not self.visible:
+            return
+        
+        list_pos = [(0, 72), (0, 80), (0, 88), (8, 72), (8, 80), (8, 88)]
+        pos = list_pos[(self.number(len(list_pos)) if self.move else 0)]
+
+        pyxel.blt(
+            self.x,
+            self.y,
+            0,
+            pos[0],
+            pos[1],
+            8 * self.direction,
+            8,
+            5
+        )
+
+    def number(self, number:int) -> int:
+        """ return a number between 0 and number depending on the frame """
+        return pyxel.frame_count // 3 % number
+
+
+
+
 
 
 
@@ -417,42 +669,250 @@ class StartMenu:
 ### ___ subclass Button ___ ###
 
 class Button:
+    """ class used to create buttons """
+
     def __init__(self, x:int, y:int, text:str):
+        """ initialise one button """
         self.x = x
         self.y = y
         self.text = text
         self.w = 50
         self.h = 16
         self.border = 2
+        self.dec_x = (self.w - self.border*2 - len(text) * 4) // 2
+        self.dec_y = 3
+        self.color_1 = 2
+        self.color_2 = 11
+        self.color_3 = 0
 
     def update(self) -> bool:
-        if pyxel.MOUSE_BUTTON_LEFT:
-            if self.x <= pyxel.mouse_x <= self.x + self.w:
-                if self.y <= pyxel.mouse_y <= self.y + self.h:
-                    return True
+        """ return if we have clicked on the button or not """
+        if self.x <= pyxel.mouse_x <= self.x + self.w and self.y <= pyxel.mouse_y <= self.y + self.h:
+            self.color_2 = 15
+            if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+                return True
+        else:
+            self.color_2 = 11
         return False
 
+
     def draw(self) -> None:
+        """ draw the button """
+        # the border of the button
         pyxel.rect(
             self.x,
             self.y,
             self.w,
             self.h,
-            2
+            self.color_1
         )
+
+        # the center of the button
         pyxel.rect(
             self.x + self.border,
             self.y + self.border,
             self.w - self.border*2,
             self.h - self.border*2,
-            11
+            self.color_2
         )
+
+        # the text of the button
         pyxel.text(
-            self.x + self.border + 2,
-            self.y + self.border + 3,
+            self.x + self.border + self.dec_x,
+            self.y + self.border + self.dec_y,
             self.text,
-            0
+            self.color_3
         )
+
+
+
+
+
+
+
+
+### ___ subclass Monster ___ ###
+
+class Monster:
+    """ class for one monster """
+
+    def __init__(self, x:int, y:int, id_m:int, physic:Physic) -> None:
+        """ create a new monster """
+        self.physic = physic
+        self.id_m = id_m
+        self.x = x
+        self.y = y
+        self.SPEED_X = 1
+        self.SPEED_Y = 0
+        self.gravity = 0.2
+        self.life = 5
+        self.direction = 1
+        self.action = 2                     # 0 for left 1 for right 2 for wait
+        self.frames_actions = 60            # the number of frames to wait between 2 actions
+        self.list_pos = [(40, 88), (48, 88), (56, 88), (64, 88)]
+        self.len_list = len(self.list_pos)
+        self.touch_ground = -1000           # when the monster touch the ground to apply skin
+        self.on_floor = True
+
+
+
+    def update(self) -> None:
+        """ update the monster """
+        tile_under = self.physic.get_tile(self.x, self.y+8)
+        tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
+        tile_over = self.physic.get_tile(self.x, self.y-1)
+        tile_over_right = self.physic.get_tile(self.x+8, self.y-1)
+
+        # if the monster is waiting an action
+        if (tile_under in TILE_SOLID or tile_under_right in TILE_SOLID) and pyxel.frame_count % self.frames_actions == 0:
+            number = random.randint(0, 10)
+
+            # choose the action of the monster
+            # random action
+            if number < 4:
+                self.action = random.randint(0, 1)
+                self.SPEED_Y -= 1.5
+                self.on_floor = False
+            # go to the player
+            elif number < 8:
+                self.action = self.physic.side_player(self.x)
+                self.SPEED_Y -= 1.5
+                self.on_floor = False
+            # wait
+            else:
+                self.action = 2
+
+        
+        # if the monster is on the floor but it's not the time for a new action
+        elif tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+            self.SPEED_Y = 0
+            self.on_floor = True
+            if not (tile_under in TILE_STAIRS or tile_over_right in TILE_STAIRS):
+                self.y = self.y //8 *8
+            if pyxel.frame_count - self.touch_ground > 59 and self.action != 2:
+                self.touch_ground = pyxel.frame_count
+            self.action = 2
+
+        # if the player is in the air
+        else:
+            self.SPEED_Y += self.gravity
+
+
+        # if the player is in an action
+        if self.action == 0:
+            self.x = max(WORLD_COORDINATES[0][0], self.x - self.SPEED_X)
+            self.direction = 1
+        
+        elif self.action == 1:
+            self.x = min(WORLD_COORDINATES[0][1] -8, self.x + self.SPEED_X)
+            self.direction = -1
+
+        # apply the gravity to the monster
+        if self.SPEED_Y > 0:
+            for _ in range(round(self.SPEED_Y)):
+                self.y += 1
+                tile_under = self.physic.get_tile(self.x, self.y+8)
+                tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
+                if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+                    if tile_under in TILE_STAIRS or tile_under_right in TILE_STAIRS:
+                        self.y = self.physic.stair_under(self.x, self.y)
+                    break
+        if self.SPEED_Y < 0:
+            for _ in range(round(-self.SPEED_Y)):
+                self.y -= 1
+                tile_over = self.physic.get_tile(self.x, self.y-1)
+                tile_over_right = self.physic.get_tile(self.x+8, self.y-1)
+                if tile_over in TILE_SOLID or tile_over_right in TILE_SOLID:
+                    break
+
+
+
+    def is_alive(self) -> bool:
+        """ return True if the monster is alive """
+        return self.life != 0
+    
+
+    def draw(self) -> None:
+        """ draw the monster """
+        # calculate the monster skin
+        if pyxel.frame_count - self.touch_ground <= 5:
+            number_pos = self.list_pos[1]
+        elif pyxel.frame_count - self.touch_ground <= 10:
+            number_pos = self.list_pos[2]
+        elif not self.on_floor:
+            number_pos = self.list_pos[0]
+        else:
+            number_pos = self.list_pos[1]
+        
+
+        pyxel.blt(
+            self.x,
+            self.y,
+            0,
+            number_pos[0],
+            number_pos[1],
+            8 * self.direction,
+            8,
+            5
+        )
+
+    
+        
+
+
+    
+
+
+
+
+
+##### _____ Monsters _____ #####
+
+class Monsters:
+    """ class used to control all the monsters """
+
+    def __init__(self, list_pos_monsters:dict, physic:Physic) -> None:
+        """ initialise all the monsters """
+        self.physic = physic
+        self.dict_monsters = {}
+        for id_m, pos in enumerate(list_pos_monsters):
+            self.dict_monsters[id_m] = Monster(pos[0], pos[1], id_m, physic)
+            self.physic.add_monster(id_m, pos)
+
+
+    def update(self) -> None:
+        """ update all the monsters and delete dead monsters """
+        for monster in self.dict_monsters.values():
+            monster.update()
+        
+        for id_m, monster in self.dict_monsters.items():
+            if not monster.is_alive():
+                self.physic.del_monster(id_m)
+                del self.dict_monsters[id_m]
+
+    
+    def draw(self) -> None:
+        """ draw all the monsters """
+        for monster in self.dict_monsters.values():
+            monster.draw()
+
+    
+    def add(self, pos:tuple) -> None:
+        """ add a monster """
+        add = False
+        k = 0
+        for id_m in self.dict_monsters.keys():
+            if not id_m == k:
+                self.dict_monsters[k] = Monster(pos[0], pos[1], k, self.physic)
+                add = True
+                break
+            k += 1
+
+        if not add:
+            self.dict_monsters[k] = Monster(pos[0], pos[1], k, self.physic)
+            
+
+
 
 
 
