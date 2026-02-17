@@ -33,7 +33,7 @@ class App:
         # variables
         self.pos_monsters = {
             0: [],
-            1: [(104, 88)]
+            1: [(104, 80)]
         }
         pos_player = (15, 15)
         self.whereami = "start menu"
@@ -47,6 +47,7 @@ class App:
         self.fake_player = FakePlayer(self.world)
         self.start_menu = StartMenu()
         self.monsters = Monsters(self.pos_monsters[self.world], self.physic)
+        self.pause = False
         
         # run the app
         pyxel.run(self.update, self.draw)
@@ -55,13 +56,23 @@ class App:
 
 
     def update(self):
+        # if we put pause
+        if pyxel.btnp(pyxel.KEY_P):
+            self.pause = not self.pause
+
+
         # if we are in the game
-        if self.whereami == "game":
+        if self.whereami == "game" and not self.pause:
             self.player.update()
+            # detect if the player is dead
+            if self.player.life == 0:
+                self.whereami = "death menu"
+            
             self.camera.update(self.player.x, self.player.y)
             self.monsters.update()
             self.ui.update()
         
+
         # if we are in the start menu
         elif self.whereami == "start menu":
             self.whereami, self.world = self.start_menu.update()
@@ -72,6 +83,9 @@ class App:
             self.physic.world = self.world
             self.camera.world = self.world
             self.monsters = Monsters(self.pos_monsters[self.world], self.physic)
+
+        elif self.whereami == "death menu":
+            pyxel.cls(0)
 
 
 
@@ -85,11 +99,15 @@ class App:
             self.monsters.draw()
             self.ui.draw()
 
+
         # if we are in the menu
         elif self.whereami == "start menu":
             self.camera.draw()
             self.start_menu.draw()
             self.fake_player.draw()
+
+
+
 
 
 
@@ -150,7 +168,26 @@ class Physic:
         """ delete a monster """
         del self.dict_pos_monsters[id_m]
 
-        
+
+    def on_monster(self, x:int, y:int) -> bool:
+        """ return if we are on a monster """
+        for pos_monster in self.dict_pos_monsters.values():
+            if pos_monster[1]-7 < y < pos_monster[1]+7:
+                if pos_monster[0]-7 < x < pos_monster[0]+7:
+                    return True
+        return False
+    
+
+    def over_monster(self, x:int, y:int) -> None:
+        """ search if we are over a monster and kill it """
+        for id_m, pos_monster in self.dict_pos_monsters.items():
+            if pos_monster[1]-8 < y < pos_monster[1]-4:
+                if pos_monster[0]-7 < x < pos_monster[0]+7:
+                    del self.dict_pos_monsters[id_m]
+                    return
+
+
+
 
 
 
@@ -180,6 +217,8 @@ class Player:
         self.coins = 0
         self.life = 5
         self.move = False
+        self.time_life = 0
+        self.delay_life = 60
 
 
 
@@ -264,11 +303,13 @@ class Player:
         else:
             self.SPEED_Y += self.gravity
 
+        # not on stairs
         if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
             if not tile_left in TILE_STAIRS and not tile_right in TILE_STAIRS:
                 self.y = self.y //8 *8
 
 
+        # if we press jump
         if pyxel.btnp(pyxel.KEY_SPACE):
             if tile_under in TILE_GROUND or tile_under_right in TILE_GROUND:
                 self.SPEED_Y -= self.jump_speed
@@ -307,6 +348,9 @@ class Player:
                     self.SPEED_Y = 0
                     break
 
+                # verify if we are over an ennemi to kill it
+                self.physic.over_monster(self.x, self.y)
+
                 self.y = new_y
 
 
@@ -340,6 +384,14 @@ class Player:
         
         # update position in physic
         self.physic.pos_player = [self.x, self.y]
+
+        # detect if we are on an monster
+        if pyxel.frame_count - self.time_life > self.delay_life:
+            if self.physic.on_monster(self.x, self.y):
+                self.life -= 1
+                self.time_life = pyxel.frame_count
+
+
     
 
 
@@ -535,7 +587,7 @@ class StartMenu:
 class FakePlayer:
     """ the fake player for the start menu """
 
-    def __init__(self, world:int):
+    def __init__(self, world:int) -> None:
         """ initialise the fake player """
         self.world = world
         self.x = 0
@@ -552,76 +604,84 @@ class FakePlayer:
         self.delay = [40, 40, 112, 48, 3, 17, 23, 10, 20, 12, 10, 10, 70]
 
     
-    def update(self):
+    def update(self) -> None:
         """ update the fake player """
         time = pyxel.frame_count - self.start_time
-        if time == sum(self.delay[:0]):
-            return
+        if time % 830 == sum(self.delay[:0]):
+            self.x = 0
+            self.y = 104
+            self.visible = False
+            tilemap = pyxel.tilemaps[self.world]
+            tilemap.set(13, 7, ["0605"])
+            tilemap.set(1, 0, ["0006"])
         
-        if time == sum(self.delay[:1]):
+        if time % 830 == sum(self.delay[:1]):
             self.visible = True
 
-        elif time == sum(self.delay[:2]):
+        elif time % 830 == sum(self.delay[:2]):
             self.SPEED_X = 1
             self.direction = 1
             self.move = True
 
-        elif time == sum(self.delay[:3]):
+        elif time % 830 == sum(self.delay[:3]):
             self.SPEED_X = 0
             self.SPEED_Y = -1
             self.direction = -1
         
-        elif time == sum(self.delay[:4]):
+        elif time % 830 == sum(self.delay[:4]):
             self.SPEED_X = -1
             self.SPEED_Y = 0
-            pyxel.tilemaps[self.world].set(int(self.x //8)-1, int(self.y //8), ["0000"])
+            pyxel.tilemaps[self.world].set(13, 7, ["0000"])
 
-        elif time == sum(self.delay[:5]):
+        elif time % 830 == sum(self.delay[:5]):
             self.SPEED_X = -1
             self.SPEED_Y = 0
 
-        elif time == sum(self.delay[:6]):
+        elif time % 830 == sum(self.delay[:6]):
             self.SPEED_X = -1
             self.SPEED_Y = -3
             self.gravity = 0.2
 
-        elif time == sum(self.delay[:7]):
+        elif time % 830 == sum(self.delay[:7]):
             self.SPEED_X = 0
             self.SPEED_Y = 0
             self.gravity = 0
 
-        elif time == sum(self.delay[:8]):
+        elif time % 830 == sum(self.delay[:8]):
             self.SPEED_X = 1
             self.SPEED_Y = -3
             self.gravity = 0.2
             self.direction = 1
 
-        elif time == sum(self.delay[:9]):
+        elif time % 830 == sum(self.delay[:9]):
             self.SPEED_X = 0
             self.SPEED_Y = 0
             self.gravity = 0
         
-        elif time == sum(self.delay[:10]):
+        elif time % 830 == sum(self.delay[:10]):
             self.SPEED_X = 0
             self.SPEED_Y = -3.3
             self.gravity = 0.2
             self.direction = -1
 
-        elif time == sum(self.delay[:11]):
+        elif time % 830 == sum(self.delay[:11]):
             self.SPEED_X = -1
             self.gravity = 0.2
 
-        elif time == sum(self.delay[:12]):
+        elif time % 830 == sum(self.delay[:12]):
             self.SPEED_X = -1
             self.SPEED_Y = 0
             self.gravity = 0
 
-        elif time > sum(self.delay):
+        elif time % 830 == sum(self.delay):
             self.SPEED_X = 0
             self.SPEED_Y = 0
             self.gravity = 0
             self.move = False
-            pyxel.tilemaps[self.world].set(int(self.x //8), int(self.y //8), ["0000"])
+            pyxel.tilemaps[self.world].set(1, 0, ["0000"])
+        
+        elif time % 830 > sum(self.delay):
+            return
 
 
 
@@ -731,6 +791,9 @@ class Button:
 
 
 
+
+
+
 ### ___ subclass Monster ___ ###
 
 class Monster:
@@ -745,7 +808,8 @@ class Monster:
         self.SPEED_X = 1
         self.SPEED_Y = 0
         self.gravity = 0.2
-        self.life = 5
+        self.life = True
+        self.time_dead = 20
         self.direction = 1
         self.action = 2                     # 0 for left 1 for right 2 for wait
         self.frames_actions = 60            # the number of frames to wait between 2 actions
@@ -758,6 +822,11 @@ class Monster:
 
     def update(self) -> None:
         """ update the monster """
+        # if the monster is dead he can't move
+        if not self.life:
+            self.time_dead -= 1
+            return
+
         tile_under = self.physic.get_tile(self.x, self.y+8)
         tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
         tile_over = self.physic.get_tile(self.x, self.y-1)
@@ -825,15 +894,30 @@ class Monster:
                 if tile_over in TILE_SOLID or tile_over_right in TILE_SOLID:
                     break
 
+        
+        # set the position in the physic class
+        self.physic.dict_pos_monsters[self.id_m] = (self.x, self.y)
 
-
-    def is_alive(self) -> bool:
-        """ return True if the monster is alive """
-        return self.life != 0
     
 
     def draw(self) -> None:
         """ draw the monster """
+        # the skin if the monster is dead
+        if not self.life:
+            pyxel.blt(
+                self.x,
+                self.y,
+                0,
+                self.list_pos[2][0],
+                self.list_pos[2][1],
+                8 * self.direction,
+                8,
+                5
+            )
+            return
+        
+
+
         # calculate the monster skin
         if pyxel.frame_count - self.touch_ground <= 5:
             number_pos = self.list_pos[1]
@@ -855,6 +939,14 @@ class Monster:
             8,
             5
         )
+
+    
+    def is_alive(self) -> bool:
+        if self.life:
+            return True
+        if self.time_dead != 0:
+            return True
+        return False
 
     
         
@@ -882,13 +974,25 @@ class Monsters:
 
     def update(self) -> None:
         """ update all the monsters and delete dead monsters """
+        # detect if a monster is dead
+        for id_m, monster in self.dict_monsters.items():
+            if not id_m in self.physic.dict_pos_monsters.keys():
+                monster.life = False
+
+
+        # update monsters
         for monster in self.dict_monsters.values():
             monster.update()
-        
+
+
+        # if a monster is dead
+        list_del = []
         for id_m, monster in self.dict_monsters.items():
             if not monster.is_alive():
-                self.physic.del_monster(id_m)
-                del self.dict_monsters[id_m]
+                list_del.append(id_m)
+        for id_m in list_del:
+            del self.dict_monsters[id_m]
+        
 
     
     def draw(self) -> None:
@@ -904,12 +1008,14 @@ class Monsters:
         for id_m in self.dict_monsters.keys():
             if not id_m == k:
                 self.dict_monsters[k] = Monster(pos[0], pos[1], k, self.physic)
+                self.physic.add_monster(k, pos)
                 add = True
                 break
             k += 1
 
         if not add:
             self.dict_monsters[k] = Monster(pos[0], pos[1], k, self.physic)
+            self.physic.add_monster(k, pos)
             
 
 
