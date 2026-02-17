@@ -1,12 +1,15 @@
 import pyxel
 import random
 
+
+
+
+
 # tiles coordinates
 TILE_FLOOR = [(0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3), (1, 3), (2, 3), (5, 2), (6, 2), (5, 3), (6, 3)]
 TILE_FLOOR_AIR = [(0, 4), (1, 4), (2, 4)]
 TILE_STAIR_RIGHT = [(6, 1)]
 TILE_STAIR_LEFT = [(5, 1)]
-TILE_OBJECT = [(0, 6)]
 TILE_DOOR_CLOSE = [(2, 5), (2, 6)]
 TILE_DOOR_OPEN = [(1, 5), (1, 6)]
 
@@ -15,6 +18,13 @@ TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR
 TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT
 
 WORLD_COORDINATES = [(0, 304), (0, 168)]
+
+
+
+
+
+
+
 
 ##### _____ App _____ ######
 
@@ -35,14 +45,22 @@ class App:
             0: [],
             1: [(104, 80)]
         }
+        self.pos_objects = {
+            0: {},
+            1: {
+                "key" : [(248, 32)]
+            }
+        }
+
         pos_player = (15, 15)
         self.whereami = "start menu"
         self.world = 0      # the tilemap
 
         # instances objects
         self.physic = Physic(pos_player, self.world)
-        self.player = Player(self.physic, pos_player, self.world)
-        self.camera = Camera(self.world)
+        self.objects = Objects(self.pos_objects ,self.physic, self.world)
+        self.player = Player(self.physic, pos_player, self.world, self.objects)
+        self.camera = Camera(self.world, self.physic)
         self.ui = UI(self)
         self.fake_player = FakePlayer(self.world)
         self.start_menu = StartMenu()
@@ -63,6 +81,7 @@ class App:
 
         # if we are in the game
         if self.whereami == "game" and not self.pause:
+            self.objects.update()
             self.player.update()
             # detect if the player is dead
             if self.player.life == 0:
@@ -78,10 +97,9 @@ class App:
             self.whereami, self.world = self.start_menu.update()
             self.fake_player.update()
 
-            # update variables
-            self.player.world = self.world
-            self.physic.world = self.world
-            self.camera.world = self.world
+            # update the world variable
+            self.player.world = self.physic.world = self.camera.world = self.objects.world = self.world
+            
             self.monsters = Monsters(self.pos_monsters[self.world], self.physic)
 
         elif self.whereami == "death menu":
@@ -95,6 +113,7 @@ class App:
         # if we are in the game
         if self.whereami == "game":
             self.camera.draw()
+            self.objects.draw()
             self.player.draw()
             self.monsters.draw()
             self.ui.draw()
@@ -106,6 +125,8 @@ class App:
             self.start_menu.draw()
             self.fake_player.draw()
 
+
+        return None
 
 
 
@@ -195,6 +216,221 @@ class Physic:
 
 
 
+###### _____ Master Objects _____ #####
+
+
+class Objects:
+    def __init__(self, dict_objects:dict, physic:Physic, world:int) -> None:
+        """ generate objects """
+        self.physic = physic
+        self.world = world
+
+        self.dict_objects = {}
+
+        for id_w, world in dict_objects.items():
+            self.dict_objects[id_w] = {}
+            i = 0
+            
+            for type_object, list_pos in world.items():
+
+                for pos in list_pos:
+
+                    if type_object == "key":
+                        self.dict_objects[id_w][i] = Key(i, pos[0], pos[1], self.physic, type_object)
+
+
+                    i += 1
+
+
+
+    
+    def update(self):
+        """ update all the objects """
+        for objects in self.dict_objects[self.world].values():
+            objects.update()
+
+
+
+    def draw(self):
+        """ draw all the objects """
+        for objects in self.dict_objects[self.world].values():
+            objects.draw()
+
+
+    def on_object(self, x:int, y:int) -> tuple:
+        """ detect if we are on an object and return his type or None """
+        for obj in self.dict_objects[self.world].values():
+            if obj.x-7 < x < obj.x+7 and obj.y-7 < y < obj.y+7:
+                return obj.type_obj, obj.id_o
+            
+
+    def del_obj(self, id_obj:int) -> None:
+        """ delete an object with his id """
+        del self.dict_objects[self.world][id_obj]
+
+
+
+    def add(self, type_obj:str, x:int, y:int, SPEED_X:int, SPEED_Y:int, slide_force:int=0) -> None:
+        """ add an object """
+        add = False
+        k = 0
+        for i in self.dict_objects.keys():
+            if not i == k:
+
+                # if the object is a key
+                if type_obj == "key":
+                    self.dict_objects[k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
+
+
+                add = True
+                break
+            k += 1
+
+
+        if not add:
+            if type_obj == "key":
+                    self.dict_objects[k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
+        
+
+
+
+
+
+
+
+
+
+##### _____ Object _____ #####
+class Object:
+    """ the master class for all objects """
+
+    def __init__(self, id_o:int, x:int, y:int, physic:Physic, type_obj:str, speed_x:int=0, speed_y:int=0, slide_force:int=0) -> None:
+        """ initialise base variables for the object """
+        self.id_o = id_o
+        self.x = x
+        self.y = y
+        self.physic = physic
+        self.type_obj = type_obj
+
+        self.SPEED_X = speed_x
+        self.SPEED_Y = speed_y
+        self.slide_force = slide_force
+        
+        self.bounce_floor_force = 0.3
+        self.bounce_wall_force = 0.1
+        self.gravity = 0.2
+
+
+
+    def update(self) -> None:
+        """ update the position of the object """
+        tile_upper = self.physic.get_tile(self.x, self.y-1)
+        tile_upper_right = self.physic.get_tile(self.x+8, self.y-1)
+        tile_under = self.physic.get_tile(self.x, self.y+8)
+        tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
+        tile_right = self.physic.get_tile(self.x+8, self.y)
+        tile_right_under = self.physic.get_tile(self.x+8, self.y+8)
+        tile_left = self.physic.get_tile(self.x-1, self.y)
+        tile_left_under = self.physic.get_tile(self.x-1, self.y+8)
+        
+        # deplace and detect if the object hit a thing
+        # in y
+        dir_y = (1 if self.SPEED_Y > 0 else -1)
+        for _ in range(round(abs(self.SPEED_X))):
+
+            # if the object go upward
+            if dir_y == -1:
+                if tile_upper in TILE_SOLID or tile_upper_right in TILE_SOLID:
+                    self.SPEED_Y = 0
+                    break
+
+
+            # if the object go downward
+            else:
+                # if the object is on the floor
+                if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+                    self.y = self.y //8 *8
+                    self.SPEED_Y *= -self.bounce_floor_force
+                    break
+
+            self.y += dir_y
+
+
+        # in x
+        dir_x = (1 if self.SPEED_X > 0 else -1)
+        for _ in range(round(abs(self.SPEED_Y))):
+
+            # right
+            if dir_x == 1:
+                # if the tile is a wall
+                if tile_right in TILE_GROUND + TILE_STAIR_LEFT or tile_right_under in TILE_GROUND + TILE_STAIR_LEFT:
+                    self.SPEED_X *= -self.bounce_wall_force
+                    break
+
+            # left
+            else:
+                # if the tile is a wall
+                if tile_left in TILE_GROUND + TILE_STAIR_RIGHT or tile_left_under in TILE_GROUND + TILE_STAIR_RIGHT:
+                    self.SPEED_X *= -self.bounce_wall_force
+                    break
+
+
+            self.x += dir_x
+
+        
+        # modify the SPEED
+
+        if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+            self.SPEED_X *= self.slide_force
+            
+            # if the object is on a stair
+            if tile_under in TILE_STAIR_LEFT:
+                self.y += self.x % 8
+            elif tile_under_right in TILE_STAIR_RIGHT:
+                self.y += 8 - (self.x % 8)
+
+            else:
+                self.y = self.y //8 *8
+
+
+        else:
+            self.SPEED_X -= dir_x*0.2
+            self.SPEED_Y += 0.2
+            
+
+
+
+
+
+
+
+
+
+
+##### _____ Key class _____ #####
+
+class Key(Object):
+
+    def draw(self) -> None:
+        pyxel.blt(
+            self.x,
+            self.y,
+            0,
+            0,
+            48,
+            8,
+            8,
+            5
+        )
+
+
+
+
+
+
+
+
+
 
 
 ##### _____ Player _____ #####
@@ -202,8 +438,9 @@ class Physic:
 class Player:
     """ class used to control the player """
 
-    def __init__(self, physic:Physic, pos_player:tuple, world:int) -> None:
+    def __init__(self, physic:Physic, pos_player:tuple, world:int, objects:Objects) -> None:
         """ initialise the player's class """
+        self.objects = objects
         self.physic = physic
         self.x = pos_player[0]
         self.y = pos_player[1]
@@ -356,15 +593,14 @@ class Player:
 
         
         # grab an object
-        if tile_player in TILE_OBJECT:
-            tm = pyxel.tilemaps[self.world]
-            tm.set(
-                int(self.x //8),
-                int(self.y //8),
-                ["0000"]
-            )
-            if tile_player == (0, 6):
+        tmp = self.objects.on_object(self.x, self.y)
+        if tmp != None:
+            type_obj, id_obj = tmp
+            
+            if type_obj == "key":
                 self.have_key = True
+                self.objects.del_obj(id_obj)
+        
 
         
         # use an object
@@ -431,8 +667,9 @@ class Player:
 class Camera:
     """ class used to control the camera """
 
-    def __init__(self, world:int) -> None:
+    def __init__(self, world:int, physic:Physic) -> None:
         """ initialise the camera """
+        self.physic = physic
         self.x = 0
         self.y = 0
         self.world = world
@@ -453,8 +690,10 @@ class Camera:
 
 
     def draw(self) -> None:
-        """ replace the camera """
+        """ draw the background and the objects """
         pyxel.cls(0)
+
+        # the background
         pyxel.bltm(
             self.x,
             self.y,
@@ -464,6 +703,9 @@ class Camera:
             128,
             128
         )
+
+        # the objects
+        pass
 
 
 
@@ -862,12 +1104,12 @@ class Monster:
                 self.touch_ground = pyxel.frame_count
             self.action = 2
 
-        # if the player is in the air
+        # if the monster is in the air
         else:
             self.SPEED_Y += self.gravity
 
 
-        # if the player is in an action
+        # if the monster is in an action
         if self.action == 0:
             self.x = max(WORLD_COORDINATES[0][0], self.x - self.SPEED_X)
             self.direction = 1
@@ -1019,6 +1261,13 @@ class Monsters:
             
 
 
+
+
+
+            
+
+
+        
 
 
 
