@@ -279,7 +279,7 @@ class Objects:
 
                 # if the object is a key
                 if type_obj == "key":
-                    self.dict_objects[k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
+                    self.dict_objects[self.world][k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
 
 
                 add = True
@@ -289,9 +289,8 @@ class Objects:
 
         if not add:
             if type_obj == "key":
-                    self.dict_objects[k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
+                    self.dict_objects[self.world][k] = Key(k, x, y, self.physic, type_obj, SPEED_X, SPEED_Y, slide_force)
         
-
 
 
 
@@ -324,84 +323,106 @@ class Object:
 
     def update(self) -> None:
         """ update the position of the object """
-        tile_upper = self.physic.get_tile(self.x, self.y-1)
-        tile_upper_right = self.physic.get_tile(self.x+8, self.y-1)
+        tile_over = self.physic.get_tile(self.x, self.y-1)
+        tile_over_right = self.physic.get_tile(self.x+8, self.y-1)
         tile_under = self.physic.get_tile(self.x, self.y+8)
         tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
         tile_right = self.physic.get_tile(self.x+8, self.y)
-        tile_right_under = self.physic.get_tile(self.x+8, self.y+8)
         tile_left = self.physic.get_tile(self.x-1, self.y)
-        tile_left_under = self.physic.get_tile(self.x-1, self.y+8)
-        
-        # deplace and detect if the object hit a thing
-        # in y
-        dir_y = (1 if self.SPEED_Y > 0 else -1)
-        for _ in range(round(abs(self.SPEED_X))):
+        tile_under_left = self.physic.get_tile(self.x-1, self.y+8)
 
-            # if the object go upward
-            if dir_y == -1:
-                if tile_upper in TILE_SOLID or tile_upper_right in TILE_SOLID:
-                    self.SPEED_Y = 0
-                    break
+        # if we go to the right
+        if self.SPEED_X > 0:
+            # if it's a wall
+            if tile_right in TILE_SOLID + TILE_STAIR_LEFT or tile_under_right in TILE_SOLID + TILE_STAIR_LEFT:
+                self.SPEED_X = 0
 
-
-            # if the object go downward
-            else:
-                # if the object is on the floor
-                if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
-                    self.y = self.y //8 *8
-                    self.SPEED_Y *= -self.bounce_floor_force
-                    break
-
-            self.y += dir_y
-
-
-        # in x
-        dir_x = (1 if self.SPEED_X > 0 else -1)
-        for _ in range(round(abs(self.SPEED_Y))):
-
-            # right
-            if dir_x == 1:
-                # if the tile is a wall
-                if tile_right in TILE_GROUND + TILE_STAIR_LEFT or tile_right_under in TILE_GROUND + TILE_STAIR_LEFT:
-                    self.SPEED_X *= -self.bounce_wall_force
-                    break
-
-            # left
-            else:
-                # if the tile is a wall
-                if tile_left in TILE_GROUND + TILE_STAIR_RIGHT or tile_left_under in TILE_GROUND + TILE_STAIR_RIGHT:
-                    self.SPEED_X *= -self.bounce_wall_force
-                    break
-
-
-            self.x += dir_x
-
-        
-        # modify the SPEED
-
-        if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
-            self.SPEED_X *= self.slide_force
+            # if we are on the floor
+            elif tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+                self.SPEED_X *= self.slide_force
             
-            # if the object is on a stair
-            if tile_under in TILE_STAIR_LEFT:
-                self.y += self.x % 8
-            elif tile_under_right in TILE_STAIR_RIGHT:
-                self.y += 8 - (self.x % 8)
-
             else:
-                self.y = self.y //8 *8
+                self.SPEED_X -= 0.2
 
-
+        # if we go to the left
         else:
-            self.SPEED_X -= dir_x*0.2
-            self.SPEED_Y += 0.2
+            # if it's a wall
+            if tile_left in TILE_SOLID + TILE_STAIR_RIGHT or tile_under_left in TILE_SOLID + TILE_STAIR_RIGHT:
+                self.SPEED_X = 0
+
+            # if we are on the floor
+            elif tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+                self.SPEED_X *= self.slide_force
+            
+            else:
+                self.SPEED_X += 0.2
+
+
+        # if we fall
+        if self.SPEED_Y > 0:
+            # if we are on the floor
+            if tile_under in TILE_GROUND or tile_under_right in TILE_GROUND:
+                self.SPEED_Y = 0
+                # if we are on stairs
+                if tile_under_right in TILE_STAIR_RIGHT:
+                    self.y = (self.y //8 *8) + 8 - (self.x % 8)
+                
+                elif tile_under in TILE_STAIR_LEFT:
+                    self.y = (self.y //8 *8) + (self.x % 8)
+
+                else:
+                    self.y = self.y //8 *8
+            
+            else:
+                self.SPEED_Y += self.gravity
+                
+        else:
+            if tile_over in TILE_GROUND or tile_over_right in TILE_GROUND:
+                self.SPEED_Y = 0
+
+
+        # for x
+        for _ in range(round(abs(self.SPEED_X))):
+            tile_under = self.physic.get_tile(self.x, self.y+8)
+            tile_under_right = self.physic.get_tile(self.x+8, self.y+8)
+            tile_right = self.physic.get_tile(self.x+8, self.y)
+            tile_left = self.physic.get_tile(self.x-1, self.y)
+            tile_under_left = self.physic.get_tile(self.x-1, self.y+8)
+            # if we go to the right
+            if self.SPEED_X > 0:
+                # if it's a wall
+                if tile_right in TILE_SOLID + TILE_STAIR_LEFT or tile_right in TILE_SOLID + TILE_STAIR_LEFT:
+                    self.SPEED_X = 0
+                    break
+
+                # if we are on stairs
+                elif tile_under in TILE_STAIR_RIGHT or tile_under_right in TILE_STAIR_RIGHT:
+                    self.SPEED_X -= 0.05
+                    self.y = (self.y //8 *8) + 8 - (self.x % 8)
+                
+                self.x += 1
+
+            else:
+                # if it's a wall
+                if tile_left in TILE_SOLID + TILE_STAIR_RIGHT or tile_under_left in TILE_SOLID + TILE_STAIR_RIGHT:
+                    self.SPEED_X = 0
+                    break
+
+                elif tile_under in TILE_STAIR_LEFT or tile_under_right in TILE_STAIR_LEFT:
+                    self.SPEED_X += 0.05
+                    self.y = (self.y //8 *8) + (self.x % 8)
+            
+                self.x -= 1
+
+
+
+
+                
+            
             
 
-
-
-
-
+        
+            
 
 
 
@@ -455,6 +476,7 @@ class Player:
         self.life = 5
         self.move = False
         self.time_life = 0
+        self.object_select = "key"
         self.delay_life = 60
 
 
@@ -600,6 +622,19 @@ class Player:
             if type_obj == "key":
                 self.have_key = True
                 self.objects.del_obj(id_obj)
+
+        
+        # throw an object
+        if pyxel.btnp(pyxel.KEY_A):
+            if self.direction == 1:
+                self.objects.add(
+                    self.object_select,
+                    self.x + 8,
+                    self.y - 1,
+                    3,
+                    -2
+                )
+
         
 
         
