@@ -1,6 +1,3 @@
 faire
-map plus grande
-autre univers avec la porte
-les nom
+le nom
 faire une fin
-
