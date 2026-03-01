@@ -1,12 +1,19 @@
 import pyxel
 import random
-
+import os
+from datetime import datetime
+import json
 
 
 
 
 # tiles coordinates
-TILE_FLOOR = [(0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3), (1, 3), (2, 3), (5, 2), (6, 2), (5, 3), (6, 3)]
+TILE_FLOOR = [
+    (0, 1), (1, 1), (2, 1), (0, 2), (1, 2), (2, 2), (0, 3), (1, 3), (2, 3),
+    (5, 2), (6, 2), (5, 3), (6, 3),
+    (3, 1), (3, 2), (3, 3),
+    (7, 3), (8, 3)
+]
 TILE_SNOW = [(2, 7), (0, 8)]
 TILE_ICE = [(1, 8), (7, 7), (7, 8)]
 TILE_FLOOR_AIR = [(0, 4), (1, 4), (2, 4)]
@@ -14,19 +21,19 @@ TILE_STAIR_RIGHT = [(6, 1)]
 TILE_STAIR_LEFT = [(5, 1)]
 TILE_DOOR_CLOSE = [(2, 5), (2, 6)]
 TILE_DOOR_OPEN = [(1, 5), (1, 6)]
-TILE_CHEST = [(7, 5), (8, 5)]
+TILE_LADDER = [(9, 1), (9, 2), (9, 3)]
+
 TILE_DOOR = TILE_DOOR_CLOSE + TILE_DOOR_OPEN
 TILE_STAIRS = TILE_STAIR_LEFT + TILE_STAIR_RIGHT
-TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR + TILE_CHEST + TILE_SNOW
-TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT + TILE_CHEST + TILE_SNOW
+TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR + TILE_SNOW
+TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT + TILE_SNOW
+
 
 WORLD_COORDINATES = {
     0: [(0, 128), (0, 128)],
-    1: [(0, 440), (0, 168)],
-    2: [(0, 656), (0, 128)]
+    1: [(0, 448), (0, 168)],
+    2: [(0, 664), (0, 128)]
 }
-
-
 
 
 
@@ -40,7 +47,7 @@ class App:
         pyxel.init(
             128,
             128,
-            title="TNSI_projet_6",
+            title="rentre chez toi",
             fps=60,
         )
         pyxel.screen_mode(0)
@@ -76,25 +83,51 @@ class App:
                 ((640, 48), False, 3, (0, 0))
             ]
         }
+        # position of chests
+        self.pos_chests = {
+            0: [],
+            1: [
+                ((408, 88), 10),
+                ((408, 152), 15)
+            ],
+            2: [
+                ((560, 0), 20),
+                ((248, 48), 15)
+            ]
+        }
+        # positions of coin cubes
+        self.pos_coin_cubes = {
+            0: [],
+            1: [
+                ((320, 128), 10)
+            ],
+            2: [
+
+            ]
+        }
 
         pos_player = (15, 15)
         self.whereami = "start menu"
         self.world = 0      # the tilemap
+        self.end_world = 3  # the world to teleport in the end menu
         self.pause = False
         self.language = "fr"
         self.cheats = False
 
         # instances objects
         self.physic = Physic(pos_player, self.world)
+        self.chests = Chests(self.pos_chests, self.world)
         self.doors = Doors(self.pos_doors, self.world)
+        self.coin_cubes = CoinCubes(self.pos_coin_cubes, self.world, self)
         self.objects = Objects(self.pos_objects, self.physic, self.world)
-        self.player = Player(self.physic, pos_player, self.world, self.objects, self.doors)
+        self.player = Player(self.physic, pos_player, self.world, self.objects, self.doors, self.chests, self.coin_cubes)
         self.camera = Camera(self.world, self.physic)
         self.ui = UI(self, self.language)
         self.fake_player = FakePlayer(self.world)
         self.start_menu = StartMenu(self.language)
         self.monsters = Monsters(self.pos_monsters, self.physic, self.world)
         self.death_menu = DeathScreen(self.language)
+        self.end_menu = EndScreen(self.language)
         self.cheat = Cheats(self)
         
         # run the app
@@ -103,20 +136,23 @@ class App:
 
 
 
-    def update(self):
+    def update(self) -> None:
+        """ update all the things """
         # if we put pause
-        if pyxel.btnp(pyxel.KEY_P):
+        if pyxel.btnp(pyxel.KEY_P) and not self.cheats:
             self.pause = not self.pause
-
-        # if we enable or disable cheats
-        if pyxel.btnp(pyxel.KEY_T):
-            self.cheats = not self.cheats
 
 
         # if we are in the game
         if self.whereami == "game" and not self.pause:
+
             self.objects.update()
-            self.player.update()
+            
+            # update the line command or the player
+            if self.cheats:
+                self.cheat.update()
+            else:
+                self.player.update()
 
             # detect if the player is dead
             if self.player.life == 0:
@@ -124,16 +160,14 @@ class App:
 
             # change the world if the world has changed
             elif self.world != self.player.world:
-                self.world = self.player.world
-                self.update_world()
+                self.update_world(self.player.world)
             
             
+            self.coin_cubes.update()
             self.camera.update(self.player.x, self.player.y)
             self.monsters.update()
             self.ui.update()
 
-            if self.cheats:
-                self.cheat.update()
         
 
         # if we are in the start menu
@@ -142,34 +176,54 @@ class App:
             self.fake_player.update()
 
             # update the world variable
-            self.update_world()
+            self.update_world(self.world)
 
 
         elif self.whereami == "death menu":
             self.death_menu.update()
 
+        elif self.whereami == "end menu":
+            self.end_menu.update()
+
+        # if we enable or disable cheats
+        if pyxel.btnp(pyxel.KEY_T) and not self.cheats:
+            self.cheats = not self.cheats
+
+
     
 
-    def update_world(self):
-        self.doors.world = self.world
-        self.player.world = self.world
-        self.physic.world = self.world
-        self.camera.change_world(self.world, self.player.x, self.player.y)
-        self.objects.world = self.world
-        self.monsters.world = self.world
+    def update_world(self, world:int) -> None:
+        """ change all the instances world """
+        # if we have win
+        if world == self.end_world:
+            self.whereami = "end menu"
+            return
+
+        self.doors.world = world
+        self.world = world
+        self.coin_cubes.change_world(world)
+        self.chests.world = world
+        self.player.world = world
+        self.physic.world = world
+        self.camera.change_world(world, self.player.x, self.player.y)
+        self.objects.world = world
+        self.monsters.world = world
 
 
 
 
 
 
-    def draw(self):
+    def draw(self) -> None:
+        """ draw all the things """
         # if we are in the game
         if self.whereami == "game":
             self.camera.draw()
             self.objects.draw()
             self.doors.draw()
+            self.chests.draw()
             self.player.draw()
+            self.coin_cubes.draw()
             self.monsters.draw()
             self.ui.draw()
 
@@ -189,6 +243,10 @@ class App:
         elif self.whereami == "death menu":
             pyxel.cls(0)
             self.death_menu.draw()
+
+        elif self.whereami == "end menu":
+            pyxel.cls(0)
+            self.end_menu.draw()
 
 
         return None
@@ -218,7 +276,8 @@ def lang(text:int, language:str) -> str:
             8: "lisse",
             9: "retro",
             10: "retour",
-            11: "options"
+            11: "options",
+            12: "Bravo, tu est rentre"
         },
         "en" : {
             0: "life",
@@ -232,7 +291,8 @@ def lang(text:int, language:str) -> str:
             8: "smooth",
             9: "retro",
             10: "back",
-            11: "options"
+            11: "options",
+            12: "Well done, you are in"
         }
     }
     return lang[language][text]
@@ -322,6 +382,7 @@ class Physic:
             if pos_monster[1]-8 < y < pos_monster[1]-4:
                 if pos_monster[0]-7 < x < pos_monster[0]+7:
                     self.del_monster(id_m, self.world)
+                    pyxel.play(0, 3)
                     return
 
 
@@ -644,6 +705,93 @@ class Coin(Object):
 
 
 
+##### _____ Chests _____ #####
+
+class Chests:
+    """ class used to control chests """
+
+    def __init__(self, dict_chests:dict, world:int) -> None:
+        """ initialise the chests """
+        self.world = world
+
+        # create all chests
+        self.chests = {}
+        for id_w, world in dict_chests.items():
+            self.chests[id_w] = {}
+            for chest in world:
+                pos = chest[0]
+                self.chests[id_w][chest[0]] = Chest(pos[0], pos[1], chest[1])
+
+    
+    def is_chest(self, x:int, y:int) -> int:
+        """ return the number of coins of the chest if we are on a chest else return None """
+        for pos, chest in self.chests[self.world].items():
+            if pos[0] -7 < x < pos[0] +7 and pos[1] -7 < y < pos[1] +7 and chest.state:
+                chest.state = False
+                return chest.coins
+            
+    
+
+    def draw(self) -> None:
+        """ draw every chest """
+        for chest in self.chests[self.world].values():
+            chest.draw()
+
+
+        
+
+
+
+
+
+
+
+### ___ Chest ___ ###
+
+class Chest:
+    """ a chest object """
+
+    def __init__(self, x:int, y:int, coins:int) -> None:
+        """ initialise the chest """
+        self.x = x
+        self.y = y
+        self.coins = coins
+        self.state = True
+
+    
+    def draw(self) -> None:
+        """ draw the chest """
+        if self.state:
+            pyxel.blt(
+                self.x,
+                self.y,
+                0,
+                56,
+                40,
+                8,
+                8,
+                5
+            )
+        else:
+            pyxel.blt(
+                self.x,
+                self.y,
+                0,
+                64,
+                40,
+                8,
+                8,
+                5
+            )
+
+
+
+
+
+
+
+
+
 
 
 ##### _____ Doors _____ #####
@@ -768,15 +916,235 @@ class Door:
 
 
 
+
+
+
+##### _____ Coin Cube _____ #####
+
+class CoinCubes:
+    """ class used to control all coins cubes """
+
+    def __init__(self, dict_pos_cubes:dict, world:int, master:App) -> None:
+        """ initialise all the coins cubes """
+        self.world = world
+        self.master = master
+
+        self.cubes = {}
+        self.list_coins = []
+        
+        for id_w, world in dict_pos_cubes.items():
+            self.cubes[id_w] = {}
+
+            for pos, coins in world:
+                self.cubes[id_w][pos] = CoinCube(pos[0], pos[1], coins)
+
+    
+    def under_cube(self, x:int, y:int) -> None:
+        """ detect if the player is under a cube """
+        for pos, cube in self.cubes[self.world].items():
+            if pos[0] -2 < x < pos[0] +2 and pos[1] -2 < y < pos[1] +2:
+                cube.steady = False
+
+    
+
+    def draw(self) -> None:
+        """ draw all the cubes """
+        for cube in self.cubes[self.world].values():
+            cube.draw()
+        
+        for coin, _ in self.list_coins:
+            coin.draw()
+
+    
+    def update(self) -> None:
+        """ update cubes and coins """
+        # coins
+        list_supp = []
+        for i in range(len(self.list_coins)):
+            self.list_coins[i][0].update()
+            self.list_coins[i][1] -= 1
+            # if we have to delete the coin due to end of the time
+            if self.list_coins[i][1] == 0:
+                list_supp = [i] + list_supp
+        
+        for a in list_supp:
+            self.list_coins.pop(a)
+
+        # cubes
+        tmp = self.is_on_player()
+        if tmp != None:
+            cube = self.cubes[self.world][tmp]
+            # update the cube
+            if cube.update(self.master.player.x, self.master.player.y -2):
+                # add a coin to the player inventory
+                if "coin" in self.master.player.dict_objects:
+                    self.master.player.dict_objects["coin"] += 1
+                else:
+                    self.master.player.dict_objects["coin"] = 1
+
+                # create a fake coin
+                x = self.cubes[self.world][tmp].x
+                y = self.cubes[self.world][tmp].y
+                self.list_coins.append([FakeCoin(x, y, 0, -2.5, self.world), 25])
+
+                # play the sound
+                pyxel.play(0, 0)
+
+
+            # if we delete the cube
+            if not cube.state:
+                del self.cubes[self.world][tmp]
+
+
+
+    def is_on_player(self) -> tuple:
+        """ return if a cube is on the player """
+        for pos, cube in self.cubes[self.world].items():
+            if not cube.state:
+                del self.cubes[self.world][pos]
+                return None
+            elif not cube.steady:
+                return pos
+        return None
+    
+
+    def change_world(self, world:int) -> None:
+        """ change the world and set varables """
+        self.list_coins = []
+
+        # if we have a cube
+        tmp = self.is_on_player()
+        if tmp != None:
+            self.cubes[world][tmp] = self.cubes[self.world][tmp]
+            self.cubes[world][tmp].world = world
+            self.cubes[world][tmp].x = self.master.player.x
+            self.cubes[world][tmp].y = self.master.player.y -2
+
+        self.world = world
+
+
+
+
+
+
+
+
+
+
+### ___ subclass Cube ____ ###
+class CoinCube:
+    """ class for instance coin cubes """
+    def __init__(self, x:int, y:int, coins:int):
+        """ initialise a coin cube """
+        self.x = x
+        self.y = y
+        self.state = True
+        self.steady = True
+        self.delay = 0
+        self.coin_delay = 60
+        self.coin_remaining = coins
+
+
+    def draw(self):
+        """ draw the cube """
+        pyxel.blt(
+            self.x,
+            self.y,
+            0,
+            40,
+            40,
+            8,
+            8,
+            5,
+            scale=(1 if self.steady else 0.8)
+        )
+
+    def update(self, x:int, y:int) -> bool:
+        """
+            update the cube (only when on the head of the player)
+            return if we have to increment player's coins
+        """
+        self.x = x
+        self.y = y
+        self.delay += 1
+
+        if self.delay == self.coin_delay:
+            self.delay = 0
+            self.coin_remaining -= 1
+            
+            if self.coin_remaining == 0:
+                self.state = False
+
+            return True
+        return False
+    
+
+
+
+
+
+
+
+### ___ subclass Fake Coin ___ ###
+
+class FakeCoin:
+    """ class used to have fake coins """
+    def __init__(self, x:int, y:int, v_x:float, v_y:float, world:int):
+        self.x = x
+        self.y = y
+        self.v_x = v_x
+        self.v_y = v_y
+        self.world = world
+        self.gravity = 0.2
+
+    
+    def update(self):
+        # x
+        self.x += self.v_x
+        self.v_x *= 0.8
+
+        # y
+        self.y += self.v_y
+        self.v_y += self.gravity
+
+    
+    def draw(self):
+        pyxel.blt(
+            self.x,
+            self.y,
+            0,
+            48,
+            40,
+            8,
+            8,
+            5
+        )
+
+
+
+
+
+
+
+
+
+
+
 ##### _____ Player _____ #####
 
 class Player:
     """ class used to control the player """
 
-    def __init__(self, physic:Physic, pos_player:tuple, world:int, objects:Objects, doors:Doors) -> None:
+    def __init__(self, physic:Physic, pos_player:tuple, world:int, objects:Objects, doors:Doors, chests:Chests, coin_cubes:CoinCubes) -> None:
         """ initialise the player's class """
+        # instances
         self.objects = objects
+        self.doors = doors
+        self.chests = chests
         self.physic = physic
+        self.coin_cubes = coin_cubes
+
+        # variables
         self.x = pos_player[0]
         self.y = pos_player[1]
         self.direction = 1
@@ -795,7 +1163,7 @@ class Player:
         self.object_select = None
         self.delay_life = 60
         self.selected_id = 0
-        self.doors = doors
+        self.has_open_chest = 0
 
 
 
@@ -813,8 +1181,13 @@ class Player:
 
         
         # gravity
+        lad_1 = self.physic.get_tile(self.x+1, self.y)
+        lad_2 = self.physic.get_tile(self.x+8, self.y+8)
+        # if we are on a ladder
+        if lad_1 in TILE_LADDER or lad_2 in TILE_LADDER:
+            pass
         # if we are on the ground
-        if tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
+        elif tile_under in TILE_SOLID or tile_under_right in TILE_SOLID:
             self.y = self.y //8 *8
         # if we are in the air
         else:
@@ -822,7 +1195,7 @@ class Player:
 
 
         # player's mouvemnt
-        if pyxel.btn(pyxel.KEY_D) and not pyxel.btn(pyxel.KEY_Q):
+        if (pyxel.btn(pyxel.KEY_D) and not pyxel.btn(pyxel.KEY_Q)) or (pyxel.btn(pyxel.KEY_RIGHT) and not pyxel.btn(pyxel.KEY_LEFT)):
             # if we are on ice
             if tile_under in TILE_ICE or tile_under_right in TILE_ICE:
                 self.v_x = self.v_x * self.slide_force_x + self.SPEED_X * self.counter_slide_force
@@ -832,7 +1205,7 @@ class Player:
                 self.v_x = self.SPEED_X
             self.direction = 1
 
-        elif pyxel.btn(pyxel.KEY_Q) and not pyxel.btn(pyxel.KEY_D):
+        elif (pyxel.btn(pyxel.KEY_Q) and not pyxel.btn(pyxel.KEY_D)) or (pyxel.btn(pyxel.KEY_LEFT) and not pyxel.btn(pyxel.KEY_RIGHT)):
             # if we are on ice
             if tile_under in TILE_ICE or tile_under_right in TILE_ICE:
                 self.v_x = self.v_x * self.slide_force_x - self.SPEED_X * self.counter_slide_force
@@ -847,7 +1220,7 @@ class Player:
             self.v_x = self.v_x * self.slide_force_x
 
         # if we don't move but we are in the air
-        elif tile_under not in TILE_GROUND and tile_under_right not in TILE_GROUND:
+        elif tile_under not in TILE_GROUND + TILE_LADDER and tile_under_right not in TILE_GROUND + TILE_LADDER:
             self.v_x *= 0.9
 
         # if we don't move
@@ -882,6 +1255,7 @@ class Player:
                 
                     # if we are next to a wall
                     elif tile_right in TILE_SOLID + TILE_ICE:
+                        self.v_x = 0
                         break
 
                     else:
@@ -905,6 +1279,7 @@ class Player:
                     
                     # if we are next to a wall
                     elif tile_left in TILE_SOLID + TILE_ICE:
+                        self.v_x = 0
                         break
 
                     else:
@@ -919,8 +1294,8 @@ class Player:
 
 
         # if we press jump
-        if pyxel.btnp(pyxel.KEY_SPACE):
-            if tile_under in TILE_GROUND + TILE_ICE or tile_under_right in TILE_GROUND + TILE_ICE:
+        if pyxel.btnp(pyxel.KEY_SPACE) or pyxel.btnp(pyxel.KEY_UP):
+            if tile_under in TILE_GROUND + TILE_ICE + TILE_LADDER or tile_under_right in TILE_GROUND + TILE_ICE + TILE_LADDER:
                 self.SPEED_Y -= self.jump_speed
 
 
@@ -933,8 +1308,13 @@ class Player:
                 tile_under = self.physic.get_tile(self.x, new_y+8)
                 tile_under_right = self.physic.get_tile(self.x+8,new_y+8)
 
+                 # if we are in a ladder
+                if tile_player in TILE_LADDER or tile_under in TILE_LADDER:
+                    self.SPEED_Y = 0
+                    break
+
                 # if we are on the ground
-                if tile_under in TILE_GROUND + TILE_ICE or tile_under_right in TILE_GROUND + TILE_ICE:
+                elif tile_under in TILE_GROUND + TILE_ICE or tile_under_right in TILE_GROUND + TILE_ICE:
                     self.SPEED_Y = 0
 
                     # if we are on stairs
@@ -950,6 +1330,7 @@ class Player:
 
                     break
                 
+
                 # if we are not on the ground
                 self.y = new_y
 
@@ -968,6 +1349,32 @@ class Player:
         
         # verify if we kill a monster
         self.physic.over_monster(self.x, self.y)
+        self.coin_cubes.under_cube(self.x, self.y)
+
+
+        # if the player is climbing a ladder
+        tile_player = self.physic.get_tile(self.x+1, self.y)
+        tile_right = self.physic.get_tile(self.x+6, self.y)
+        tile_under = self.physic.get_tile(self.x+1, self.y+8)
+        tile_under_1 = self.physic.get_tile(self.x, self.y+8)
+        tile_under_2 = self.physic.get_tile(self.x, self.y+7)
+        tile_under_right = self.physic.get_tile(self.x+6, self.y+8)
+        tile_under_right_2 = self.physic.get_tile(self.x+6, self.y+7)
+
+        # up
+        if pyxel.btn(pyxel.KEY_Z) or pyxel.btn(pyxel.KEY_UP):
+            if tile_player in TILE_LADDER or tile_right in TILE_LADDER or tile_under_2 in TILE_LADDER and tile_under_right_2 in TILE_LADDER:
+                self.y -= 1
+
+        # down
+        elif pyxel.btn(pyxel.KEY_S) or pyxel.btn(pyxel.KEY_DOWN):
+            if tile_under in TILE_LADDER and tile_under_right in TILE_LADDER:
+                if tile_under_1 in TILE_LADDER:
+                    self.x = self.x //8 *8
+                else:
+                    self.x = (self.x //8 +1) *8
+                self.y += 1
+
 
 
         
@@ -988,6 +1395,10 @@ class Player:
             
             # delete the object of the world
             self.objects.del_obj(id_obj)
+
+            # play the sound
+            if type_obj in ["key", "coin"]:
+                pyxel.play(0, 0)
 
 
         
@@ -1026,7 +1437,7 @@ class Player:
         
         # use an object or enter somewere
         if pyxel.btnp(pyxel.KEY_E):
-            tm = pyxel.tilemaps[self.world]
+
             # if the player try to open a door
             door = self.doors.is_door(self.x, self.y)
             if door == 1:
@@ -1048,6 +1459,23 @@ class Player:
                                 for key in self.dict_objects.keys():
                                     break
                                 self.object_select = key
+
+                        # play the sound
+                        pyxel.play(0, 1)
+
+
+            # if the player try to open a chest
+            tmp = self.chests.is_chest(self.x, self.y)
+            if tmp:
+                # add the coin
+                if "coin" in self.dict_objects:
+                    self.dict_objects["coin"] += tmp
+                else:
+                    self.dict_objects["coin"] = tmp
+
+                # play the sound
+                pyxel.play(0, 1)
+                self.has_open_chest = 1
             
             # if the player try to enter in a new world
             elif door == 2:
@@ -1065,6 +1493,7 @@ class Player:
         if pyxel.frame_count - self.time_life > self.delay_life:
             if self.physic.on_monster(self.x, self.y):
                 self.life -= 1
+                pyxel.play(0, 2)
                 self.time_life = pyxel.frame_count
 
         
@@ -1089,6 +1518,15 @@ class Player:
                 if i -1 == self.selected_id:
                     self.selected_id = i
                     self.object_select = objects
+
+        
+
+        # play the coin sound after the chest sound
+        if self.has_open_chest > 0:
+            self.has_open_chest += 1
+            if self.has_open_chest == 20:
+                self.has_open_chest = 0
+                pyxel.play(0, 0)
 
     
 
@@ -1311,7 +1749,7 @@ class UI:
             pyxel.text(
                 self.x + self.pos_objects[i][0] +10,
                 self.y + self.pos_objects[i][1] +2,
-                f"x: {number}",
+                f"x:{number}",
                 4
             )
 
@@ -1626,7 +2064,54 @@ class Button:
 
 
 
+##### _____ End Screen _____ #####
+
+class EndScreen:
+    """ this class is used to display the end screen """
+    def __init__(self, language:str):
+        self.language = language
+        self.button_restart = Button(40, 30, 3, self)
+        self.button_quit = Button(40, 50, 2, self)
+
+
+
+    def update(self):
+        """ update the menu """
+        pyxel.camera(0, 0)
+        pyxel.mouse(True)
+        # update all the buttons
+        if self.button_quit.update():
+            pyxel.quit()
+
+        elif self.button_restart.update():
+            pyxel.reset()
+
+    
+
+    def draw(self):
+        """ draw the menu """
+        # the text
+        pyxel.text(
+            40,
+            15,
+            lang(12, self.language),
+            8
+        )
+
+        # the buttons
+        self.button_restart.draw()
+        self.button_quit.draw()
+
+
+
+
+
+
+
+
+
 ##### _____ Death Screen _____ #####
+
 class DeathScreen:
     """ this class is used to display the death screen """
     def __init__(self, language:str):
@@ -2104,10 +2589,26 @@ class Cheats:
             "x": pyxel.KEY_X,
             "y": pyxel.KEY_Y,
             "z": pyxel.KEY_Z,
-            " ": pyxel.KEY_SPACE
+            " ": pyxel.KEY_SPACE,
+            "0": pyxel.KEY_0,
+            "1": pyxel.KEY_1,
+            "2": pyxel.KEY_2,
+            "3": pyxel.KEY_3,
+            "4": pyxel.KEY_4,
+            "5": pyxel.KEY_5,
+            "6": pyxel.KEY_6,
+            "7": pyxel.KEY_7,
+            "8": pyxel.KEY_8,
+            "9": pyxel.KEY_9
         }
+    
         self.line = ""
+        self.a_line = ""
         self.master = master
+        
+        # set x and y
+        self.x = self.master.camera.x
+        self.y = self.master.camera.y
 
 
     def update(self) -> None:
@@ -2125,12 +2626,25 @@ class Cheats:
         # if we enter the command
         if pyxel.btnp(pyxel.KEY_RETURN):
             line_decomp = self.line.split(" ")
+            self.a_line = self.line
             self.line = ""
             self.command(line_decomp)
 
         # if we delete a char
-        if pyxel.btnp(pyxel.KEY_BACKSPACE):
+        elif pyxel.btnp(pyxel.KEY_BACKSPACE):
             self.line = self.line[:-1]
+
+        # if we want the ancient line
+        elif pyxel.btnp(pyxel.KEY_UP):
+            self.line = self.a_line
+        
+        # if we want a new line
+        elif pyxel.btnp(pyxel.KEY_DOWN):
+            self.line = ""
+
+        # if we close the command line
+        elif pyxel.btnp(pyxel.KEY_CTRL):
+            self.master.cheats = False
 
 
     
@@ -2141,6 +2655,41 @@ class Cheats:
         if cmd == "give":
             if len(line_decomp) == 2:
                 self.give(line_decomp[1])
+            elif len(line_decomp) == 3:
+                self.give(line_decomp[1], line_decomp[2])
+
+
+        elif cmd == "tp":
+            # without change world
+            if len(line_decomp) == 3:
+                self.tp(line_decomp[1], line_decomp[2])
+            
+            # change world
+            if len(line_decomp) == 4:
+                self.tp(line_decomp[1], line_decomp[2])
+                self.change_world(line_decomp[3])
+        
+        elif cmd == "gamerule":
+            if len(line_decomp) == 3:
+                self.gamerule(line_decomp[1], line_decomp[2])
+
+
+        elif cmd == "exit":
+            pyxel.quit()
+
+        elif cmd == "restart":
+            pyxel.reset()
+
+        elif cmd == "end":
+            self.master.update_world(self.master.end_world)
+    
+        elif cmd == "death":
+            self.master.player.life = 0
+
+        elif cmd == "player":
+            if len(line_decomp) == 3:
+                self.player(line_decomp[1], line_decomp[2])
+
 
 
     
@@ -2166,7 +2715,7 @@ class Cheats:
 
     ### --- The list of commands --- ###
 
-    def give(self, obj:str) -> None:
+    def give(self, obj:str, number:str="1") -> None:
         """ add the object in the player list of object """
         # verify if the object is good
         if not obj in ["key", "coin"]:
@@ -2174,11 +2723,98 @@ class Cheats:
         
         # add the object
         if obj in self.master.player.dict_objects:
-            self.master.player.dict_objects[obj] += 1
+            self.master.player.dict_objects[obj] += int(number)
         else:
-            self.master.player.dict_objects[obj] = 1
+            self.master.player.dict_objects[obj] = int(number)
 
 
+    def tp(self, x:str, y:str) -> None:
+        """ teleport the player """
+        self.master.player.x = int(x)
+        self.master.player.y = int(y)
+
+
+    def change_world(self, world:str):
+        """ change the world of the player """
+        self.master.update_world(int(world))
+
+    
+    def gamerule(self, rule:str, param:str) -> None:
+        """ change a parameter of the game """
+        if not rule in ["fullscreen"]:
+            return
+        
+        if rule == "fullscreen" and param in ["true", "false"]:
+            pyxel.fullscreen((True if param == "true" else False))
+
+
+    
+    def player(self, option:str, param:str) -> None:
+        """ change a thing of the player """
+        if not option in ["life"]:
+            return
+        
+        if option == "life":
+            self.master.player.life = int(param)
+
+
+
+
+
+
+
+
+
+##### _____ Map Screen _____ #####
+
+class MapScreen:
+    """ class used to display and interact with the choosing map menu """
+
+    def __init__(self) -> None:
+        """ initialise the menu """
+        self.list_saves = os.listdir()
+        self.nbr_menu = 0
+        self.dict_buttons = {}
+
+        if self.list_saves > 4:
+            self.button_left = Button(5, 60, "<", None)
+            self.button_right = Button(120, 60, ">", None)
+
+        # set the right number of dict in the base dict
+        for k in range(len(self.list_saves) // 4 + (0 if len(self.self.list_saves) %4 == 0 else 1)):
+            self.dict_buttons[k] = {}
+
+        # add all the buttons in the right place in dict
+        for i, save in enumerate(self.list_saves):
+            y = k %4 *20 +30
+            self.dict_buttons[i //4][save] = Button(40, y, save, None)
+
+
+
+
+
+
+
+
+# if we are not in the right folder
+if "python" in os.listdir():
+    os.chdir("python")
+
+# my libs integrated
+
+class Json:
+    def Read(file):
+        try:
+            data = json.load(open(file, "r"))
+        except Exception as e:
+            print(f"a error has occured : {e}")
+        return data
+
+    def Save(data, file):
+        try:
+            json.dump(data, open(file, "w"))
+        except Exception as e:
+            print(f"an error has occured : {e}")
 
 App()
 
