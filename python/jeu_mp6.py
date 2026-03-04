@@ -1,8 +1,9 @@
 import pyxel
 import random
 import os
-from datetime import datetime
 import json
+import shutil
+
 
 
 
@@ -53,60 +54,9 @@ class App:
         pyxel.screen_mode(0)
         pyxel.fullscreen(True)
 
-        pyxel.load('4.pyxres')
+        pyxel.load('base.pyxres')
 
         # variables
-        # positions of monsters
-        self.pos_monsters = {
-            0: [],
-            1: [(104, 80), (288, 144)],
-            2: [(184, 104), (488, 88)]
-        }
-        # position of objects
-        self.pos_objects = {
-            0: {},
-            1: {
-                "key" : [(248, 32)],
-                "coin" : [(144, 56), (40, 80)]
-            },
-            2: {
-                "key" : [(232, 32)],
-                "coin" : [(160, 40), (523, 88)]
-            }
-        }
-        # position of doors
-        self.pos_doors = {
-            0: [],
-            1: [((88, 16), False, 2, (40, 96))],
-            2: [
-                ((40, 96), True, 1, (88, 16)),
-                ((640, 48), False, 3, (0, 0))
-            ]
-        }
-        # position of chests
-        self.pos_chests = {
-            0: [],
-            1: [
-                ((408, 88), 10),
-                ((408, 152), 15)
-            ],
-            2: [
-                ((560, 0), 20),
-                ((248, 48), 15)
-            ]
-        }
-        # positions of coin cubes
-        self.pos_coin_cubes = {
-            0: [],
-            1: [
-                ((320, 128), 10)
-            ],
-            2: [
-
-            ]
-        }
-
-        pos_player = (15, 15)
         self.whereami = "start menu"
         self.world = 0      # the tilemap
         self.end_world = 3  # the world to teleport in the end menu
@@ -115,20 +65,16 @@ class App:
         self.cheats = False
 
         # instances objects
-        self.physic = Physic(pos_player, self.world)
-        self.chests = Chests(self.pos_chests, self.world)
-        self.doors = Doors(self.pos_doors, self.world)
-        self.coin_cubes = CoinCubes(self.pos_coin_cubes, self.world, self)
-        self.objects = Objects(self.pos_objects, self.physic, self.world)
-        self.player = Player(self.physic, pos_player, self.world, self.objects, self.doors, self.chests, self.coin_cubes)
+        self.physic = Physic((0, 0), self.world)
         self.camera = Camera(self.world, self.physic)
         self.ui = UI(self, self.language)
         self.fake_player = FakePlayer(self.world)
         self.start_menu = StartMenu(self.language)
-        self.monsters = Monsters(self.pos_monsters, self.physic, self.world)
         self.death_menu = DeathScreen(self.language)
         self.end_menu = EndScreen(self.language)
         self.cheat = Cheats(self)
+        self.map_screen = MapScreen(self.language)
+        self.new_world = NewWorld(self.language)
         
         # run the app
         pyxel.run(self.update, self.draw)
@@ -166,6 +112,9 @@ class App:
             self.coin_cubes.update()
             self.camera.update(self.player.x, self.player.y)
             self.monsters.update()
+
+            if self.ui.language != self.language:
+                self.ui.language = self.language
             self.ui.update()
 
         
@@ -185,10 +134,81 @@ class App:
         elif self.whereami == "end menu":
             self.end_menu.update()
 
+        
+        elif self.whereami == "game menu":
+            tmp = self.map_screen.update()
+            if tmp:
+                if tmp[0] == "edit" and tmp[1] == "":
+                    self.whereami = "new world"
+                    pyxel.mouse(False)
+                elif tmp[0] == "edit":
+                    self.new_world.charge_save(tmp[1])
+                else:
+                    self.load_save(tmp)
+                
+
+
+        elif self.whereami == "new world":
+            self.new_world.update()
+
+
         # if we enable or disable cheats
         if pyxel.btnp(pyxel.KEY_T) and not self.cheats:
             self.cheats = not self.cheats
 
+
+
+    def load_save(self, save:str) -> None:
+        """ load the save and initialise instances """
+        dict_all = Json.Read(f"./maps/{save}/options.json")
+
+        # for the monsters
+        pos_monsters_str = dict_all["pos_monsters"]
+        pos_monsters = {}
+        for id_w, world in pos_monsters_str.items():
+            pos_monsters[int(id_w)] = world
+
+        # for the objects
+        pos_objects_str = dict_all["pos_objects"]
+        pos_objects = {}
+        for id_w, world in pos_objects_str.items():
+            pos_objects[int(id_w)] = world
+        
+        # for doors
+        pos_doors_str = dict_all["pos_doors"]
+        pos_doors = {}
+        for id_w, world in pos_doors_str.items():
+            pos_doors[int(id_w)] = world
+
+        # for chest
+        pos_chests_str = dict_all["pos_chests"]
+        pos_chests = {}
+        for id_w, world in pos_chests_str.items():
+            pos_chests[int(id_w)] = world
+
+        # for coin cubes
+        pos_coin_cubes_str = dict_all["pos_coin_cubes"]
+        pos_coin_cubes = {}
+        for id_w, world in pos_coin_cubes_str.items():
+            pos_coin_cubes[int(id_w)] = world
+
+        # for the player
+        pos_player = dict_all["pos_player"]
+
+        # load the resources
+        pyxel.load(f"./maps/{save}/world.pyxres")
+
+        # variable
+        self.whereami = "game"
+
+        self.chests = Chests(pos_chests, self.world)
+        self.doors = Doors(pos_doors, self.world)
+        self.coin_cubes = CoinCubes(pos_coin_cubes, self.world, self)
+        self.objects = Objects(pos_objects, self.physic, self.world)
+        self.player = Player(self.physic, pos_player, self.world, self.objects, self.doors, self.chests, self.coin_cubes)
+        self.monsters = Monsters(pos_monsters, self.physic, self.world)
+
+        self.update_world(dict_all["world_spawn"])
 
     
 
@@ -198,16 +218,19 @@ class App:
         if world == self.end_world:
             self.whereami = "end menu"
             return
+        
 
-        self.doors.world = world
+        if self.whereami == "game":
+            self.doors.world = world
+            self.coin_cubes.change_world(world)
+            self.chests.world = world
+            self.player.world = world
+            self.objects.world = world
+            self.monsters.world = world
+            self.camera.change_world(world, self.player.x, self.player.y)
+
         self.world = world
-        self.coin_cubes.change_world(world)
-        self.chests.world = world
-        self.player.world = world
         self.physic.world = world
-        self.camera.change_world(world, self.player.x, self.player.y)
-        self.objects.world = world
-        self.monsters.world = world
 
 
 
@@ -248,6 +271,12 @@ class App:
             pyxel.cls(0)
             self.end_menu.draw()
 
+        elif self.whereami == "game menu":
+            self.map_screen.draw()
+
+        elif self.whereami == "new world":
+            self.new_world.draw()
+
 
         return None
 
@@ -277,7 +306,10 @@ def lang(text:int, language:str) -> str:
             9: "retro",
             10: "retour",
             11: "options",
-            12: "Bravo, tu est rentre"
+            12: "Bravo, tu est rentre",
+            13: "creer monde",
+            14: "nom de la map",
+            15: "editer"
         },
         "en" : {
             0: "life",
@@ -292,7 +324,10 @@ def lang(text:int, language:str) -> str:
             9: "retro",
             10: "back",
             11: "options",
-            12: "Well done, you are in"
+            12: "Well done, you are in",
+            13: "new world",
+            14: "name of the map",
+            15: "edit"
         }
     }
     return lang[language][text]
@@ -300,6 +335,53 @@ def lang(text:int, language:str) -> str:
 
 
 
+def key() -> str:
+    """ return the button pressed """
+    keys = {
+        "a": pyxel.KEY_A,
+        "b": pyxel.KEY_B,
+        "c": pyxel.KEY_C,
+        "d": pyxel.KEY_D,
+        "e": pyxel.KEY_E,
+        "f": pyxel.KEY_F,
+        "g": pyxel.KEY_G,
+        "h": pyxel.KEY_H,
+        "i": pyxel.KEY_I,
+        "j": pyxel.KEY_J,
+        "k": pyxel.KEY_K,
+        "l": pyxel.KEY_L,
+        "m": pyxel.KEY_M,
+        "n": pyxel.KEY_N,
+        "o": pyxel.KEY_O,
+        "p": pyxel.KEY_P,
+        "q": pyxel.KEY_Q,
+        "r": pyxel.KEY_R,
+        "s": pyxel.KEY_S,
+        "t": pyxel.KEY_T,
+        "u": pyxel.KEY_U,
+        "v": pyxel.KEY_V,
+        "w": pyxel.KEY_W,
+        "x": pyxel.KEY_X,
+        "y": pyxel.KEY_Y,
+        "z": pyxel.KEY_Z,
+        " ": pyxel.KEY_SPACE,
+        "0": pyxel.KEY_0,
+        "1": pyxel.KEY_1,
+        "2": pyxel.KEY_2,
+        "3": pyxel.KEY_3,
+        "4": pyxel.KEY_4,
+        "5": pyxel.KEY_5,
+        "6": pyxel.KEY_6,
+        "7": pyxel.KEY_7,
+        "8": pyxel.KEY_8,
+        "9": pyxel.KEY_9
+    }
+
+    for letter, k_id in keys.items():
+        if pyxel.btnp(k_id):
+            return letter
+        
+    return None
 
 
 
@@ -720,7 +802,7 @@ class Chests:
             self.chests[id_w] = {}
             for chest in world:
                 pos = chest[0]
-                self.chests[id_w][chest[0]] = Chest(pos[0], pos[1], chest[1])
+                self.chests[id_w][(chest[0][0], chest[0][1])] = Chest(pos[0], pos[1], chest[1])
 
     
     def is_chest(self, x:int, y:int) -> int:
@@ -808,7 +890,7 @@ class Doors:
             # for each world create a dictionary to stock position and instances
             self.dict_doors[id_w] = {}
             for pos_door, state, dir_w, pos_w in world:
-                self.dict_doors[id_w][pos_door] = Door(state, dir_w, pos_w, pos_door)
+                self.dict_doors[id_w][(pos_door[0], pos_door[1])] = Door(state, dir_w, pos_w, pos_door)
 
 
 
@@ -936,7 +1018,7 @@ class CoinCubes:
             self.cubes[id_w] = {}
 
             for pos, coins in world:
-                self.cubes[id_w][pos] = CoinCube(pos[0], pos[1], coins)
+                self.cubes[id_w][(pos[0], pos[1])] = CoinCube(pos[0], pos[1], coins)
 
     
     def under_cube(self, x:int, y:int) -> None:
@@ -1785,7 +1867,7 @@ class StartMenu:
             # if play
             if self.bouton_play.update():
                 pyxel.mouse(False)
-                return "game", 1
+                return "game menu", 1
             
             # if we exit
             if self.bouton_quitter.update():
@@ -2052,6 +2134,72 @@ class Button:
             self.x + self.border + dec_x,
             self.y + self.border + self.dec_y,
             text,
+            self.color_3
+        )
+
+
+
+
+
+
+
+
+
+class LittleButton:
+    """ class used to create buttons """
+
+    def __init__(self, x:int, y:int, letter:str):
+        """ initialise one button """
+        self.x = x
+        self.y = y
+        self.letter = letter
+        self.w = 14
+        self.h = 16
+        self.border = 2
+        self.dec_y = 3
+        self.color_1 = 2
+        self.color_2 = 11
+        self.color_3 = 0
+
+    def update(self) -> bool:
+        """ return if we have clicked on the button or not """
+        # detect if the mouse is on the button to change to color and to return if we click on it
+        if self.x <= pyxel.mouse_x <= self.x + self.w and self.y <= pyxel.mouse_y <= self.y + self.h:
+            self.color_2 = 15
+            if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+                return True
+        else:
+            self.color_2 = 11
+        return False
+
+
+    def draw(self) -> None:
+        """ draw the button """
+        # the border of the button
+        pyxel.rect(
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            self.color_1
+        )
+
+        # the center of the button
+        pyxel.rect(
+            self.x + self.border,
+            self.y + self.border,
+            self.w - self.border*2,
+            self.h - self.border*2,
+            self.color_2
+        )
+
+        dec_x = 3
+
+        # the text of the button
+        pyxel.text(
+            self.x + self.border + dec_x,
+            self.y + self.border + self.dec_y,
+            self.letter,
             self.color_3
         )
 
@@ -2405,7 +2553,6 @@ class Options:
         # variables
         self.language = language
         self.place = "main"
-        self.language = language
         self.button_lang = Button(40, 30, 5, self)
         self.button_style = Button(40, 50, 6, self)
         self.button_back = Button(40, 70, 10, self)
@@ -2562,46 +2709,6 @@ class Cheats:
     """ this class is used to cheat because of the difficulty of the game ;) """
     def __init__(self, master:App) -> None:
         """ initialise the cheats """
-        self.keys = {
-            "a": pyxel.KEY_A,
-            "b": pyxel.KEY_B,
-            "c": pyxel.KEY_C,
-            "d": pyxel.KEY_D,
-            "e": pyxel.KEY_E,
-            "f": pyxel.KEY_F,
-            "g": pyxel.KEY_G,
-            "h": pyxel.KEY_H,
-            "i": pyxel.KEY_I,
-            "j": pyxel.KEY_J,
-            "k": pyxel.KEY_K,
-            "l": pyxel.KEY_L,
-            "m": pyxel.KEY_M,
-            "n": pyxel.KEY_N,
-            "o": pyxel.KEY_O,
-            "p": pyxel.KEY_P,
-            "q": pyxel.KEY_Q,
-            "r": pyxel.KEY_R,
-            "s": pyxel.KEY_S,
-            "t": pyxel.KEY_T,
-            "u": pyxel.KEY_U,
-            "v": pyxel.KEY_V,
-            "w": pyxel.KEY_W,
-            "x": pyxel.KEY_X,
-            "y": pyxel.KEY_Y,
-            "z": pyxel.KEY_Z,
-            " ": pyxel.KEY_SPACE,
-            "0": pyxel.KEY_0,
-            "1": pyxel.KEY_1,
-            "2": pyxel.KEY_2,
-            "3": pyxel.KEY_3,
-            "4": pyxel.KEY_4,
-            "5": pyxel.KEY_5,
-            "6": pyxel.KEY_6,
-            "7": pyxel.KEY_7,
-            "8": pyxel.KEY_8,
-            "9": pyxel.KEY_9
-        }
-    
         self.line = ""
         self.a_line = ""
         self.master = master
@@ -2619,9 +2726,9 @@ class Cheats:
 
 
         # if a button is pressed
-        for letter, k_id in self.keys.items():
-            if pyxel.btnp(k_id):
-                self.line += letter
+        tmp = key()
+        if tmp != None:
+            self.line += tmp
 
         # if we enter the command
         if pyxel.btnp(pyxel.KEY_RETURN):
@@ -2770,24 +2877,300 @@ class Cheats:
 class MapScreen:
     """ class used to display and interact with the choosing map menu """
 
-    def __init__(self) -> None:
+    def __init__(self, language:str) -> None:
         """ initialise the menu """
-        self.list_saves = os.listdir()
+        self.list_saves = os.listdir("maps")
         self.nbr_menu = 0
+        self.number_menu = 0
         self.dict_buttons = {}
+        self.language = language
+        self.mode = "launch"
 
-        if self.list_saves > 4:
-            self.button_left = Button(5, 60, "<", None)
-            self.button_right = Button(120, 60, ">", None)
+
+        # buttons
+        self.new_world = Button(40, 5, 13, self)
+        self.edit_btn = Button(40, 25, 15, self)
+
+        if len(self.list_saves) > 4:
+            self.button_left = LittleButton(5, 60, "<")
+            self.button_right = LittleButton(110, 60, ">")
 
         # set the right number of dict in the base dict
-        for k in range(len(self.list_saves) // 4 + (0 if len(self.self.list_saves) %4 == 0 else 1)):
-            self.dict_buttons[k] = {}
+        for k in range(len(self.list_saves)):
+            self.dict_buttons[k //4] = {}
+        self.number_menu = k //4
 
         # add all the buttons in the right place in dict
         for i, save in enumerate(self.list_saves):
-            y = k %4 *20 +30
+            y = i %4 *20 +45
             self.dict_buttons[i //4][save] = Button(40, y, save, None)
+
+    
+
+    def update(self) -> str:
+        """ Update the menu return the name of the save if a save is clicked """
+        if self.new_world.update():
+            return "edit", ""
+        if self.edit_btn.update():
+            self.mode = "edit"
+
+
+        # if the arrow buttons are used
+        if self.number_menu != 0:
+            if self.nbr_menu != 0:
+                if self.button_left.update():
+                    self.nbr_menu = max(0, self.nbr_menu -1)
+            if self.nbr_menu != self.number_menu:
+                if self.button_right.update():
+                    self.nbr_menu = min(self.number_menu, self.nbr_menu +1)
+
+        # the others
+        for name, btn in self.dict_buttons[self.nbr_menu].items():
+            if btn.update():
+                return name, self.mode
+
+
+    def draw(self) -> None:
+        """ draw the menu """
+        pyxel.cls(0)
+        pyxel.mouse(True)
+
+        self.new_world.draw()
+        self.edit_btn.draw()
+
+        # if the arrow buttons are used
+        if self.number_menu != 0:
+            if self.nbr_menu != 0:
+                self.button_left.draw()
+            if self.nbr_menu != self.number_menu:
+                self.button_right.draw()
+
+        # the others
+        for btn in self.dict_buttons[self.nbr_menu].values():
+            btn.draw()
+
+
+
+
+
+
+
+
+##### _____ New World _____ #####
+
+class NewWorld:
+    """ class used to create a new world """
+
+    def __init__(self, language:str) -> None:
+        """ initialise the new world creation menu """
+        # variables
+        self.language = language
+        self.name_save = ""
+        self.menu = "name"
+
+        # menus
+        self.menu_name = NameMenu(self.language)
+        self.editor = Editor()
+
+
+    def update(self) -> None:
+        """ update the new world menu """
+        if self.menu == "name":
+            tmp = self.menu_name.update()
+            if tmp:
+                self.name_save = tmp
+                self.change_menu("editor")
+
+        elif self.menu == "editor":
+            self.editor.update()
+
+    
+    def change_menu(self, menu:str) -> None:
+        """ chnage the menu """
+        if menu == "editor":
+            self.menu = "editor"
+            os.mkdir(f"./maps/{self.name_save}")
+            shutil.copy("base.pyxres", f"maps/{self.name_save}/world.pyxres")
+            pyxel.load(f"maps/{self.name_save}/world.pyxres")
+
+
+
+    def charge_save(self, name:str) -> None:
+        """ charge a save to edit """
+        pyxel.load(f"maps/{name}/world.pyxres")
+        self.name_save = name
+        self.menu = self.editor
+
+
+    def draw(self) -> None:
+        """ draw the new world menu """
+        if self.menu == "name":
+            self.menu_name.draw()
+
+        elif self.menu == "editor":
+            self.editor.draw()
+
+
+
+
+
+
+
+
+### ___ subclass NameMenu ___ ###
+
+class NameMenu:
+    """ class used to set the name of a new save """
+    
+    def __init__(self, language:str) -> None:
+        """ initialise the name menu """
+        self.language = language
+        self.text_name = ""
+
+
+    
+    def update(self) -> str:
+        """ update the selection name menu """
+        # if we add a letter
+        tmp = key()
+        if tmp != None:
+            self.text_name += tmp
+
+        # delete a letter
+        if pyxel.btnp(pyxel.KEY_BACKSPACE):
+            self.text_name = self.text_name[:-1]
+
+        # if we press enter
+        if pyxel.btnp(pyxel.KEY_RETURN):
+            return self.text_name
+
+
+    
+    def draw(self) -> None:
+        """ draw the selection name menu """
+        pyxel.cls(0)
+        pyxel.mouse(True)
+        pyxel.rect(40, 30, 50, 16, 9)
+        pyxel.rect(42, 32, 46, 12, 5)
+        dec_x = (50- len(self.text_name) * 4) // 2
+        pyxel.text(
+            40 + dec_x,
+            35,
+            self.text_name,
+            7
+        )
+
+        pyxel.text(
+            40,
+            15,
+            lang(14, self.language),
+            8
+        )
+
+
+        
+
+
+
+
+
+
+
+### ___ subclass Editor ___ ###
+
+class Editor:
+    """ class used to edit the map """
+    def __init__(self) -> None:
+        self.world_x = 0
+        self.world_y = 0
+        self.world_id = 0
+        self.tiles_x = 0
+        self.tiles_y = 0
+
+
+
+        # colors
+        self.color_1 = 6
+        self.color_2 = 0
+        self.color_3 = 7
+
+    
+
+    def update(self) -> None:
+        """ update the editor """
+        clic = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)
+        m_x = pyxel.mouse_x
+        m_y = pyxel.mouse_y
+
+        # buttons
+        if pyxel.btnp(pyxel.KEY_LEFT):
+            self.tiles_x = max(0, self.tiles_x -5)
+        if pyxel.btnp(pyxel.KEY_RIGHT):
+            self.tiles_x = min(256, self.tiles_x +5)
+        
+        # the arrows
+        if clic:
+            # world y -
+            if 72 < m_x < 78 and 7 < m_y < 12:
+                self.world_y = max(0, self.world_y -5)
+
+            # world y +
+            elif 72 < m_x < 78 and 68 < m_y < 72:
+                self.world_y = min(256, self.world_y +5)
+        
+
+
+
+    def draw(self) -> None:
+        """ draw the editor """
+        pyxel.cls(self.color_1)
+
+        # draw the world
+        pyxel.rect(7, 7, 72, 66, self.color_2)
+        pyxel.bltm(
+            8,
+            8,
+            self.world_id,
+            self.world_x,
+            self.world_y,
+            64,
+            64
+        )
+
+        # draw the tiles
+        pyxel.blt(
+            87,
+            8,
+            0,
+            self.tiles_x,
+            self.tiles_y,
+            33,
+            105,
+        )
+
+
+        # the arrows
+        # world y
+        pyxel.rect(73, 8, 5, 4, self.color_3)      # top
+        pyxel.rect(73, 68, 5, 4, self.color_3)     # bottom
+        pyxel.rect(73, 13, 5, 54, self.color_3)    # middle
+
+        y_1 = 9
+        y2 = 69
+
+        pyxel.pset(75, y_1, self.color_2)
+        pyxel.pset(75, y_1+1, self.color_2)
+        pyxel.pset(74, y_1+1, self.color_2)
+        pyxel.pset(76, y_1+1, self.color_2)
+        pyxel.pset(75, y2, self.color_2)
+        pyxel.pset(75, y2+1, self.color_2)
+        pyxel.pset(74, y2, self.color_2)
+        pyxel.pset(76, y2, self.color_2)
+
+
+
+
+
 
 
 
@@ -2800,21 +3183,24 @@ class MapScreen:
 if "python" in os.listdir():
     os.chdir("python")
 
-# my libs integrated
 
+# my libs integrated for import / export in json
 class Json:
-    def Read(file):
+    def Read(file) -> dict:
+        """ read a json file """
         try:
-            data = json.load(open(file, "r"))
+            return json.load(open(file, "r"))
         except Exception as e:
             print(f"a error has occured : {e}")
-        return data
 
-    def Save(data, file):
+    def Save(data:dict, file:str) -> None:
+        """ save a json file """
         try:
             json.dump(data, open(file, "w"))
         except Exception as e:
             print(f"an error has occured : {e}")
+
+
 
 App()
 
