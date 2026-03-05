@@ -142,6 +142,7 @@ class App:
                     self.whereami = "new world"
                     pyxel.mouse(False)
                 elif tmp[0] == "edit":
+                    self.whereami = "new world"
                     self.new_world.charge_save(tmp[1])
                 else:
                     self.load_save(tmp)
@@ -309,7 +310,7 @@ def lang(text:int, language:str) -> str:
             12: "Bravo, tu est rentre",
             13: "creer monde",
             14: "nom de la map",
-            15: "editer"
+            15: "editer",
         },
         "en" : {
             0: "life",
@@ -2086,6 +2087,7 @@ class Button:
         self.border = 2
         self.dec_y = 3
         self.color_1 = 2
+        self.color_2_base = 11
         self.color_2 = 11
         self.color_3 = 0
 
@@ -2097,7 +2099,7 @@ class Button:
             if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
                 return True
         else:
-            self.color_2 = 11
+            self.color_2 = self.color_2_base
         return False
 
 
@@ -2912,7 +2914,14 @@ class MapScreen:
         if self.new_world.update():
             return "edit", ""
         if self.edit_btn.update():
-            self.mode = "edit"
+            if self.mode == "launch":
+                self.mode = "edit"
+                self.edit_btn.text = 1
+                self.change_color_btn(10)
+            else:
+                self.mode = "launch"
+                self.edit_btn.text = 15
+                self.change_color_btn(11)
 
 
         # if the arrow buttons are used
@@ -2927,7 +2936,16 @@ class MapScreen:
         # the others
         for name, btn in self.dict_buttons[self.nbr_menu].items():
             if btn.update():
-                return name, self.mode
+                return self.mode, name
+            
+    
+    def change_color_btn(self, col:int) -> None:
+        """ change the color of the buttons """
+        for i in self.dict_buttons.keys():
+            for btn in self.dict_buttons[i].values():
+                btn.color_2_base = col
+
+
 
 
     def draw(self) -> None:
@@ -2937,6 +2955,8 @@ class MapScreen:
 
         self.new_world.draw()
         self.edit_btn.draw()
+
+        pyxel.rect(20, 42, 88, 1, 7)
 
         # if the arrow buttons are used
         if self.number_menu != 0:
@@ -2999,7 +3019,7 @@ class NewWorld:
         """ charge a save to edit """
         pyxel.load(f"maps/{name}/world.pyxres")
         self.name_save = name
-        self.menu = self.editor
+        self.menu = "editor"
 
 
     def draw(self) -> None:
@@ -3085,7 +3105,10 @@ class Editor:
         self.world_y = 0
         self.world_id = 0
         self.tiles_x = 0
-        self.tiles_y = 0
+
+
+        self.delay_clic = 10
+        self.delay = 0
 
 
 
@@ -3097,8 +3120,17 @@ class Editor:
     
 
     def update(self) -> None:
-        """ update the editor """
-        clic = pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT)
+        """ update the editor """    
+        if self.delay > 0:
+            self.delay -= 1
+
+        if pyxel.btn(pyxel.MOUSE_BUTTON_LEFT) and self.delay == 0:
+            self.delay = self.delay_clic
+            clic = True
+        else:
+            clic = False
+
+
         m_x = pyxel.mouse_x
         m_y = pyxel.mouse_y
 
@@ -3106,17 +3138,25 @@ class Editor:
         if pyxel.btnp(pyxel.KEY_LEFT):
             self.tiles_x = max(0, self.tiles_x -5)
         if pyxel.btnp(pyxel.KEY_RIGHT):
-            self.tiles_x = min(256, self.tiles_x +5)
+            self.tiles_x = min(43, self.tiles_x +5)
         
         # the arrows
         if clic:
             # world y -
-            if 72 < m_x < 78 and 7 < m_y < 12:
+            if 72 < m_x < 78 and 7 < m_y < 13:
                 self.world_y = max(0, self.world_y -5)
 
             # world y +
-            elif 72 < m_x < 78 and 68 < m_y < 72:
-                self.world_y = min(256, self.world_y +5)
+            elif 72 < m_x < 79 and 99 < m_y < 105:
+                self.world_y = min(192, self.world_y +5)
+
+            # world x -
+            elif 7 < m_x < 13 and 104 < m_y < 111:
+                self.world_x = max(0, self.world_x -5)
+
+            # world x +
+            elif 67 < m_x < 72 and 104 < m_y < 111:
+                self.world_x = min(160, self.world_x +5)
         
 
 
@@ -3126,7 +3166,9 @@ class Editor:
         pyxel.cls(self.color_1)
 
         # draw the world
-        pyxel.rect(7, 7, 72, 66, self.color_2)
+        pyxel.rect(7, 7, 72, 98, self.color_2)
+        pyxel.rect(7, 104, 66, 7, self.color_2)
+        pyxel.rect(85, 7, 38, 98, self.color_2)
         pyxel.bltm(
             8,
             8,
@@ -3134,38 +3176,65 @@ class Editor:
             self.world_x,
             self.world_y,
             64,
-            64
+            96
         )
 
         # draw the tiles
         pyxel.blt(
-            87,
+            86,
             8,
             0,
             self.tiles_x,
-            self.tiles_y,
-            33,
-            105,
+            0,
+            36,
+            96,
         )
 
 
         # the arrows
         # world y
         pyxel.rect(73, 8, 5, 4, self.color_3)      # top
-        pyxel.rect(73, 68, 5, 4, self.color_3)     # bottom
-        pyxel.rect(73, 13, 5, 54, self.color_3)    # middle
+        pyxel.rect(73, 100, 5, 4, self.color_3)    # bottom
+        pyxel.rect(73, 13, 5, 86, self.color_3)    # middle
 
-        y_1 = 9
-        y2 = 69
+        pyxel.pset(75, 9, self.color_2)
+        pyxel.pset(75, 10, self.color_2)
+        pyxel.pset(74, 10, self.color_2)
+        pyxel.pset(76, 10, self.color_2)
+        pyxel.pset(75, 101, self.color_2)
+        pyxel.pset(75, 102, self.color_2)
+        pyxel.pset(74, 101, self.color_2)
+        pyxel.pset(76, 101, self.color_2)
 
-        pyxel.pset(75, y_1, self.color_2)
-        pyxel.pset(75, y_1+1, self.color_2)
-        pyxel.pset(74, y_1+1, self.color_2)
-        pyxel.pset(76, y_1+1, self.color_2)
-        pyxel.pset(75, y2, self.color_2)
-        pyxel.pset(75, y2+1, self.color_2)
-        pyxel.pset(74, y2, self.color_2)
-        pyxel.pset(76, y2, self.color_2)
+
+        # world x
+        pyxel.rect(8, 105, 4, 5, self.color_3)      # left
+        pyxel.rect(68, 105, 4, 5, self.color_3)     # right
+        pyxel.rect(13, 105, 54, 5, self.color_3)    # middle
+
+        pyxel.pset(9, 107, self.color_2)
+        pyxel.pset(10, 106, self.color_2)
+        pyxel.pset(10, 107, self.color_2)
+        pyxel.pset(10, 108, self.color_2)
+        pyxel.pset(69, 107, self.color_2)
+        pyxel.pset(69, 106, self.color_2)
+        pyxel.pset(70, 107, self.color_2)
+        pyxel.pset(69, 108, self.color_2)
+
+
+        # tiles x
+        pyxel.rect(8, 105, 4, 5, self.color_3)      # left
+        pyxel.rect(68, 105, 4, 5, self.color_3)     # right
+        pyxel.rect(13, 105, 54, 5, self.color_3)    # middle
+
+        pyxel.pset(9, 107, self.color_2)
+        pyxel.pset(10, 106, self.color_2)
+        pyxel.pset(10, 107, self.color_2)
+        pyxel.pset(10, 108, self.color_2)
+        pyxel.pset(69, 107, self.color_2)
+        pyxel.pset(69, 106, self.color_2)
+        pyxel.pset(70, 107, self.color_2)
+        pyxel.pset(69, 108, self.color_2)
 
 
 
