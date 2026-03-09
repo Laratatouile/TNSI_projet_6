@@ -15,9 +15,17 @@ TILE_FLOOR = [
     (3, 1), (3, 2), (3, 3),
     (7, 3), (8, 3)
 ]
+TILE_MONSTER = [(5, 11), (6, 11), (7, 11), (8, 11)]
+TILE_COIN_CUBE = [(5, 5)]
+TILE_PLAYER = [(0, 9), (0, 10), (0, 11), (1, 9), (1, 10), (1, 11), (2, 9), (2, 11), (3, 11)]
+TILE_CHEST_OPEN = [(7, 5)]
+TILE_CHEST_CLOSE = [(8, 5)]
+TILE_CHEST = TILE_CHEST_OPEN + TILE_CHEST_CLOSE
 TILE_SNOW = [(2, 7), (0, 8)]
 TILE_ICE = [(1, 8), (7, 7), (7, 8)]
 TILE_FLOOR_AIR = [(0, 4), (1, 4), (2, 4)]
+TILE_COIN = [(6, 5)]
+TILE_KEY = [(0, 6)]
 TILE_STAIR_RIGHT = [(6, 1)]
 TILE_STAIR_LEFT = [(5, 1)]
 TILE_DOOR_CLOSE = [(2, 5), (2, 6)]
@@ -150,7 +158,9 @@ class App:
 
 
         elif self.whereami == "new world":
-            self.new_world.update()
+            if self.new_world.update():
+                pyxel.load("base.pyxres")
+                self.whereami = "start menu"
 
 
         # if we enable or disable cheats
@@ -161,7 +171,7 @@ class App:
 
     def load_save(self, save:str) -> None:
         """ load the save and initialise instances """
-        dict_all = Json.Read(f"./maps/{save}/options.json")
+        dict_all = Json.Read(f"maps/{save[1]}/options.json")
 
         # for the monsters
         pos_monsters_str = dict_all["pos_monsters"]
@@ -197,7 +207,7 @@ class App:
         pos_player = dict_all["pos_player"]
 
         # load the resources
-        pyxel.load(f"./maps/{save}/world.pyxres")
+        pyxel.load(f"./maps/{save[1]}/world.pyxres")
 
         # variable
         self.whereami = "game"
@@ -311,6 +321,12 @@ def lang(text:int, language:str) -> str:
             13: "creer monde",
             14: "nom de la map",
             15: "editer",
+            16: "monde de destination :",
+            17: "destination x :",
+            18: "destination y :",
+            19: "ok",
+            20: "sauvegarder",
+            21: "nombres de pieces"
         },
         "en" : {
             0: "life",
@@ -328,7 +344,13 @@ def lang(text:int, language:str) -> str:
             12: "Well done, you are in",
             13: "new world",
             14: "name of the map",
-            15: "edit"
+            15: "edit",
+            16: "destination world",
+            17: "destination x :",
+            18: "destination y :",
+            19: "ok",
+            20: "save",
+            21: "number of coins"
         }
     }
     return lang[language][text]
@@ -803,7 +825,7 @@ class Chests:
             self.chests[id_w] = {}
             for chest in world:
                 pos = chest[0]
-                self.chests[id_w][(chest[0][0], chest[0][1])] = Chest(pos[0], pos[1], chest[1])
+                self.chests[id_w][(pos[0], pos[1])] = Chest(pos[0], pos[1], chest[1], chest[2])
 
     
     def is_chest(self, x:int, y:int) -> int:
@@ -834,12 +856,12 @@ class Chests:
 class Chest:
     """ a chest object """
 
-    def __init__(self, x:int, y:int, coins:int) -> None:
+    def __init__(self, x:int, y:int, coins:int, state:bool) -> None:
         """ initialise the chest """
         self.x = x
         self.y = y
         self.coins = coins
-        self.state = True
+        self.state = state
 
     
     def draw(self) -> None:
@@ -2976,6 +2998,10 @@ class MapScreen:
 
 
 
+
+
+
+
 ##### _____ New World _____ #####
 
 class NewWorld:
@@ -2990,10 +3016,18 @@ class NewWorld:
 
         # menus
         self.menu_name = NameMenu(self.language)
-        self.editor = Editor()
+        self.editor = Editor(language)
+
+    
+    def update_language(self, language:str) -> None:
+        """ update the language """
+        self.language = language
+        self.editor.language = language
 
 
-    def update(self) -> None:
+
+
+    def update(self) -> bool:
         """ update the new world menu """
         if self.menu == "name":
             tmp = self.menu_name.update()
@@ -3002,11 +3036,17 @@ class NewWorld:
                 self.change_menu("editor")
 
         elif self.menu == "editor":
-            self.editor.update()
+            if self.editor.update():
+                return True
+            
+        
+        return False
+
 
     
+
     def change_menu(self, menu:str) -> None:
-        """ chnage the menu """
+        """ chanage the menu """
         if menu == "editor":
             self.menu = "editor"
             os.mkdir(f"./maps/{self.name_save}")
@@ -3019,6 +3059,7 @@ class NewWorld:
         """ charge a save to edit """
         pyxel.load(f"maps/{name}/world.pyxres")
         self.name_save = name
+        self.editor.map = name
         self.menu = "editor"
 
 
@@ -3088,6 +3129,380 @@ class NameMenu:
         )
 
 
+
+
+
+
+
+
+
+### ___ subclass MenuChest ___ ###
+
+class MenuChest:
+    """ class used to display the menu of options of the chests """
+    def __init__(self, x:int, y:int, state:bool, language:str) -> None:
+        """ initialise a menu for the chests """
+        self.x = x
+        self.y = y
+        self.state = state
+        self.coins = "0"
+        self.language = language
+        self.menu_select = 0
+        self.button_enter = Button(40, 88, 19, self)
+
+
+    def update(self) -> bool:
+        """ update the menu """
+        m_x = pyxel.mouse_x
+        m_y = pyxel.mouse_y
+
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+            # dest x and y
+            if 16 < m_x < 112 and 17 < m_y < 37:
+                self.menu_select = 1
+
+
+
+        # change letters
+        # coins
+        if self.menu_select == 1:
+            # add a number
+            tmp = key()
+            if tmp:
+                try:
+                    int(tmp)
+                    self.coins += tmp
+                except:
+                    pass
+            # delete a number
+            elif pyxel.btnp(pyxel.KEY_BACKSPACE):
+                if len(self.coins) > 0:
+                    self.coins = self.coins[:-1]
+                
+        
+        return self.button_enter.update()
+             
+
+        
+
+
+
+    def draw(self) -> None:
+        """ draw the menu """
+        # back rect
+        pyxel.rect(
+            16,
+            16,
+            96,
+            96,
+            0
+        )
+
+        pyxel.rect(
+            17,
+            17,
+            94,
+            20,
+            11
+        )
+
+
+
+        pyxel.text(
+            20, 20,
+            lang(21, self.language),
+            0
+        )
+
+        pyxel.text(
+            20, 30,
+            self.coins,
+            0
+        )
+
+        self.button_enter.draw()
+
+
+    def save(self) -> list:
+        return [[self.x, self.y], self.coins, self.state]
+
+
+
+
+
+
+
+
+
+
+### ___ subclass class MenuCoinCube ___ ###
+
+class MenuCoinCube:
+    """ class used to display the menu of options of the coin cubes """
+    def __init__(self, x:int, y:int, language:str) -> None:
+        """ initialise a menu for the coin cubes """
+        self.x = x
+        self.y = y
+        self.coins = "0"
+        self.language = language
+        self.menu_select = 0
+        self.button_enter = Button(40, 88, 19, self)
+
+
+    def update(self) -> bool:
+        """ update the menu """
+        m_x = pyxel.mouse_x
+        m_y = pyxel.mouse_y
+
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+            # dest x and y
+            if 16 < m_x < 112 and 17 < m_y < 37:
+                self.menu_select = 1
+
+
+
+        # change letters
+        # coins
+        if self.menu_select == 1:
+            # add a number
+            tmp = key()
+            if tmp:
+                try:
+                    int(tmp)
+                    self.coins += tmp
+                except:
+                    pass
+            # delete a number
+            elif pyxel.btnp(pyxel.KEY_BACKSPACE):
+                if len(self.coins) > 0:
+                    self.coins = self.coins[:-1]
+                
+        
+        return self.button_enter.update()
+             
+
+        
+
+
+
+    def draw(self) -> None:
+        """ draw the menu """
+        # back rect
+        pyxel.rect(
+            16,
+            16,
+            96,
+            96,
+            0
+        )
+
+        pyxel.rect(
+            17,
+            17,
+            94,
+            20,
+            11
+        )
+
+
+
+        pyxel.text(
+            20, 20,
+            lang(21, self.language),
+            0
+        )
+
+        pyxel.text(
+            20, 30,
+            self.coins,
+            0
+        )
+
+        self.button_enter.draw()
+
+
+    def save(self) -> list:
+        return [[self.x, self.y], self.coins]
+
+
+
+
+
+
+
+
+
+
+### ___ subclass MenuDoor ___ ###
+
+class MenuDoor:
+    """ class used to display the menu of options of a door """
+    def __init__(self, x:int, y:int, world_id:int, active:bool, language:str) -> None:
+        """ initialise a menu for the doors """
+        self.x = x
+        self.y = y
+        self.world_id = world_id
+        self.active = active
+        self.dest_world_id = 1
+        self.dest_x = "0"
+        self.dest_y = "0"
+        self.language = language
+        self.menu_select = 0
+        self.button_enter = Button(40, 88, 19, self)
+
+
+    def update(self) -> bool:
+        """ update the menu """
+        m_x = pyxel.mouse_x
+        m_y = pyxel.mouse_y
+
+        if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT):
+            # dest_world
+            if 50 < m_x < 57 and 27 < m_y < 34:
+                self.dest_world_id = max(1, self.dest_world_id -1)
+            
+            elif 70 < m_x < 77 and 27 < m_y < 34:
+                self.dest_world_id = min(7, self.dest_world_id +1)
+
+            # dest x and y
+            elif 16 < m_x < 112 and 38 < m_y < 58:
+                self.menu_select = 1
+
+            elif 16 < m_x < 122 and 59 < m_y < 79:
+                self.menu_select = 2
+
+
+        # change letters
+        # for x
+        if self.menu_select == 1:
+            # add a number
+            tmp = key()
+            if tmp:
+                try:
+                    int(tmp)
+                    self.dest_x += tmp
+                except:
+                    pass
+            # delete a number
+            elif pyxel.btnp(pyxel.KEY_BACKSPACE):
+                if len(self.dest_x) > 0:
+                    self.dest_x = self.dest_x[:-1]
+                
+
+        elif self.menu_select == 2:
+            # add a number
+            tmp = key()
+            if tmp:
+                try:
+                    int(tmp)
+                    self.dest_y += tmp
+                except:
+                    pass
+            # delete a number
+            elif pyxel.btnp(pyxel.KEY_BACKSPACE):
+                if len(self.dest_y) > 0:
+                    self.dest_y = self.dest_y[:-1]
+        
+        return self.button_enter.update()
+             
+
+        
+
+
+
+    def draw(self) -> None:
+        """ draw the menu """
+        # back rect
+        pyxel.rect(
+            16,
+            16,
+            96,
+            96,
+            0
+        )
+
+        pyxel.rect(
+            17,
+            17,
+            94,
+            20,
+            11
+        )
+        pyxel.rect(
+            17,
+            38,
+            94,
+            20,
+            11
+        )
+        pyxel.rect(
+            17,
+            59,
+            94,
+            20,
+            11
+        )
+
+
+        # dest world
+        pyxel.text(
+            20, 19,
+            lang(16, self.language),
+            0
+        )
+
+        # -
+        pyxel.rect(50, 27, 7, 7, 0)
+        pyxel.rect(51, 28, 5, 5, 7)
+        pyxel.rect(52, 30, 3, 1, 0)
+
+        # id world
+        pyxel.text(
+            62, 28,
+            str(self.dest_world_id),
+            0
+        )
+
+
+        # +
+        pyxel.rect(70, 27, 7, 7, 0)
+        pyxel.rect(71, 28, 5, 5, 7)
+        pyxel.rect(72, 30, 3, 1, 0)
+        pyxel.rect(73, 29, 1, 3, 0)
+
+        # destination world x and y
+        pyxel.text(
+            20, 40,
+            lang(17, self.language),
+            0
+        )
+
+        pyxel.text(
+            20, 50,
+            self.dest_x,
+            0
+        )
+
+
+        pyxel.text(
+            20, 61,
+            lang(18, self.language),
+            0
+        )
+
+        pyxel.text(
+            20, 71,
+            self.dest_y,
+            0
+        )
+
+        self.button_enter.draw()
+
+
+    def save(self) -> list:
+        return [[self.x, self.y], self.active, self.dest_world_id, [int(self.dest_x), int(self.dest_y)]]
+        
+
         
 
 
@@ -3100,15 +3515,47 @@ class NameMenu:
 
 class Editor:
     """ class used to edit the map """
-    def __init__(self) -> None:
+    def __init__(self, language:str) -> bool:
         self.world_x = 0
         self.world_y = 0
-        self.world_id = 0
+        self.world_id = 1
         self.tiles_x = 0
+        self.map = ""
+        self.language = language
+        self.button_save = Button(78, 112, 20, self)
+        self.world_spawn = 1
+        self.pos_spawn = [15, 15]
+
+        self.menu_open = False
+        self.menu = None
+
+        # the objects variables
+        self.doors = {}
+        for i in range(8):
+            self.doors[i] = {}
+
+        self.chests = {}
+        for i in range(8):
+            self.chests[i] = {}
+
+        self.coin_cubes = {}
+        for i in range(8):
+            self.coin_cubes[i] = {}
+
+        self.monsters = {}
+        for i in range(8):
+            self.monsters[i] = []
+
+        self.objects = {}
+        for i in range(8):
+            self.objects[i] = {"key" : [], "coin": []}
 
 
         self.delay_clic = 10
-        self.delay = 0
+        self.clic_time = 0
+        self.tile_select = (0, 0)
+        self.delay_save = 600
+        self.save_time = 0
 
 
 
@@ -3118,46 +3565,250 @@ class Editor:
         self.color_3 = 7
 
     
+    def save(self) -> None:
+        """ save all the things """
+
+        # doors
+        dict_doors = {}
+        for id_w, doors in self.doors.items():
+            dict_doors[str(id_w)] = []
+            for door in doors.values():
+                dict_doors[str(id_w)].append(door.save())
+
+
+        # chests
+        dict_chests = {}
+        for id_w, chests in self.chests.items():
+            dict_chests[str(id_w)] = []
+            for chest in chests.values():
+                dict_chests[str(id_w)].append(chest.save())
+
+
+        # coin cubes
+        dict_coin_cubes = {}
+        for id_w, coin_cubes in self.coin_cubes.items():
+            dict_coin_cubes[str(id_w)] = []
+            for cube in coin_cubes.values():
+                dict_coin_cubes[str(id_w)].append(cube.save())
+
+
+
+        # objects
+        dict_objects = {}
+        for id_w, dict_world in self.objects.items():
+            dict_objects[str(id_w)] = {"key": [], "coin": []}
+            for type_obj, list_pos in dict_world.items():
+                dict_objects[str(id_w)][type_obj] = list_pos
+
+
+
+
+        dict_all = {
+            "pos_doors" : dict_doors,
+            "pos_monsters" : self.monsters,
+            "pos_chests" : dict_chests,
+            "pos_objects" : dict_objects,
+            "world_spawn" : self.world_spawn,
+            "pos_player" : self.pos_spawn,
+            "pos_coin_cubes" : dict_coin_cubes
+        }
+
+    
 
     def update(self) -> None:
-        """ update the editor """    
-        if self.delay > 0:
-            self.delay -= 1
+        """ update the editor """
+        # delay
+        if self.clic_time != self.delay_clic:
+            self.clic_time += 1
 
-        if pyxel.btn(pyxel.MOUSE_BUTTON_LEFT) and self.delay == 0:
-            self.delay = self.delay_clic
-            clic = True
+        # save
+        if self.save_time != self.delay_save:
+            self.save_time += 1
         else:
-            clic = False
-
-
-        m_x = pyxel.mouse_x
-        m_y = pyxel.mouse_y
-
-        # buttons
-        if pyxel.btnp(pyxel.KEY_LEFT):
-            self.tiles_x = max(0, self.tiles_x -5)
-        if pyxel.btnp(pyxel.KEY_RIGHT):
-            self.tiles_x = min(43, self.tiles_x +5)
+            self.save_time = 0
+            pyxel.save(f"maps/{self.map}/world.pyxres")
         
-        # the arrows
-        if clic:
-            # world y -
-            if 72 < m_x < 78 and 7 < m_y < 13:
-                self.world_y = max(0, self.world_y -5)
 
-            # world y +
-            elif 72 < m_x < 79 and 99 < m_y < 105:
-                self.world_y = min(192, self.world_y +5)
+        # button save
+        if self.button_save.update():
+            pyxel.save(f"maps/{self.map}/world.pyxres")
+            self.save()
 
-            # world x -
-            elif 7 < m_x < 13 and 104 < m_y < 111:
-                self.world_x = max(0, self.world_x -5)
+            return True
+            
 
-            # world x +
-            elif 67 < m_x < 72 and 104 < m_y < 111:
-                self.world_x = min(160, self.world_x +5)
+        if not self.menu_open:
+            if pyxel.btn(pyxel.MOUSE_BUTTON_LEFT) and self.clic_time == self.delay_clic:
+                self.clic_time = 0
+                clic = True
+            else:
+                clic = False
+
+
+            m_x = pyxel.mouse_x
+            m_y = pyxel.mouse_y
+
+            # buttons
+            if pyxel.btnp(pyxel.KEY_LEFT):
+                self.tiles_x = max(0, self.tiles_x -5)
+            if pyxel.btnp(pyxel.KEY_RIGHT):
+                self.tiles_x = min(43, self.tiles_x +5)
+
+
+
+            
+            # the arrows
+            if clic:
+                # world y -
+                if 72 < m_x < 78 and 7 < m_y < 13:
+                    self.world_y = max(0, self.world_y -5)
+
+                # world y +
+                elif 72 < m_x < 79 and 99 < m_y < 105:
+                    self.world_y = min(192, self.world_y +5)
+
+                # world x -
+                elif 7 < m_x < 13 and 104 < m_y < 111:
+                    self.world_x = max(0, self.world_x -5)
+
+                # world x +
+                elif 67 < m_x < 72 and 104 < m_y < 111:
+                    self.world_x = min(160, self.world_x +5)
+
+                # tiles x -
+                elif 85 < m_x < 91 and 104 < m_y < 111:
+                    self.tiles_x = max(0, self.tiles_x -5)
+
+                # tiles x +
+                elif 117 < m_x < 123 and 104 < m_y < 111:
+                    self.tiles_x = min(43, self.tiles_x +5)
+                
+                
+                # world +
+                elif 50 < m_x < 57 and 114 < m_y < 121:
+                    self.world_id = max(1, self.world_id -1)
+
+                # world -                
+                elif 60 < m_x < 67 and 114 < m_y < 121:
+                    self.world_id = min(7, self.world_id +1)
+
+
+
+            if pyxel.btn(pyxel.MOUSE_BUTTON_LEFT) and self.clic_time >= 0:
+                # if we select a tile
+                if 86 < m_x < 122 and 8 < m_y < 104:
+                    tile_x = (m_x - 86 + self.tiles_x) // 8
+                    tile_y = (m_y - 8 ) // 8
+                    self.tile_select = (tile_x, tile_y)
+
+                
+                # if we put a tile
+                elif 8 < m_x < 72 and 8 < m_y < 102:
+                    tile_x = (m_x - 8 + self.world_x) // 8
+                    tile_y = (m_y - 8 + self.world_y) // 8
+
+                    # detect if we replace an object with properties
+                    tile_under = self.get_tile(tile_x, tile_y)
+                    if tile_under in TILE_DOOR:
+                        # if it's a door
+                        if tile_under in TILE_DOOR:
+                            del self.doors[self.world_id][(tile_x, tile_y)]
+                        
+                        # if it's a monster
+                        if tile_under in TILE_MONSTER:
+                            del self.monsters[self.world_id][(tile_x, tile_y)]
+
+
+                    # if the tile placed is special
+                    # if it's a door
+                    if self.tile_select in TILE_DOOR:
+                        state = self.tile_select in TILE_DOOR_OPEN
+                        self.doors[self.world_id][(tile_x, tile_y)] = MenuDoor(tile_x *8, tile_y *8, self.world_id, state, self.language)
+                        self.menu_open = True
+                        self.menu = self.doors[self.world_id][(tile_x, tile_y)]
+                        
+                        # the type of door
+                        if self.tile_select in TILE_DOOR_CLOSE:
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y -1, ["0205"])
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y, ["0206"])
+                        else:
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y -1, ["0105"])
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y, ["0106"])
+                    
+
+                    # if it's a monster
+                    elif self.tile_select in TILE_MONSTER:
+                        self.monsters[self.world_id].append([tile_x *8, tile_y *8])
+
+                    
+                    # if it's a player
+                    elif self.tile_select in TILE_PLAYER:
+                        self.world_spawn = self.world_id
+                        self.pos_spawn = [tile_x *8, tile_y *8]
+
+                    
+                    # if it's a chest
+                    elif self.tile_select in TILE_CHEST:
+                        state = self.tile_select in TILE_CHEST_OPEN
+                        self.chests[self.world_id][(tile_x *8, tile_y *8)] = MenuChest(tile_x *8, tile_y *8, state, self.language)
+                        if state:
+                            self.menu_open = True
+                            self.menu = self.chests[self.world_id][(tile_x *8, tile_y *8)]
+
+                    # if it's a coin cube
+                    elif self.tile_select in TILE_COIN_CUBE:
+                        self.coin_cubes[self.world_id][(tile_x *8, tile_y *8)] = MenuCoinCube(tile_x *8, tile_y *8, self.language)
+                        self.menu_open = True
+                        self.menu = self.coin_cubes[self.world_id][(tile_x *8, tile_y *8)]
+                    
+                    # if it's a coin
+                    elif self.tile_select in TILE_COIN:
+                        self.objects[self.world_id]["coin"].append([tile_x *8, tile_y *8])
+
+                    # if it's a key
+                    elif self.tile_select in TILE_KEY:
+                        self.objects[self.world_id]["key"].append([tile_x *8, tile_y *8])
+
+
+                    # the rest
+                    else:
+                        pyxel.tilemaps[self.world_id].set(tile_x, tile_y, [f"{self.tile_select[0]:02X}{self.tile_select[1]:02X}"])
+
+
+
+            # if we want to modify a thing
+            if pyxel.btnp(pyxel.MOUSE_BUTTON_RIGHT):
+                tile = self.get_tile(m_x, m_y)
+                tile_x = (m_x - 8 + self.world_x) // 8
+                tile_y = (m_y - 8 + self.world_y) // 8
+
+                # if we want to modify a door
+                if tile in TILE_DOOR:
+                    self.menu_open = True
+                    self.menu = self.doors[self.world_id][(tile_x, tile_y)]
+
         
+        # if we are in a menu
+        else:
+            if self.menu.update():
+                self.menu_open = False
+                self.menu = None
+                self.clic_time = -60
+
+
+        
+        return False
+
+
+    
+
+
+    def get_tile(self, m_x:int, m_y:int) -> tuple:
+        """ return the tile we're clicked on """
+        tile_x = (m_x - 8 + self.world_x) // 8
+        tile_y = (m_y - 8 + self.world_y) // 8
+        pyxel.tilemaps[self.world_id].pget(tile_x, tile_y)
+
 
 
 
@@ -3168,7 +3819,7 @@ class Editor:
         # draw the world
         pyxel.rect(7, 7, 72, 98, self.color_2)
         pyxel.rect(7, 104, 66, 7, self.color_2)
-        pyxel.rect(85, 7, 38, 98, self.color_2)
+        pyxel.rect(85, 7, 38, 104, self.color_2)
         pyxel.bltm(
             8,
             8,
@@ -3189,6 +3840,126 @@ class Editor:
             36,
             96,
         )
+
+        # draw a rect for the tile select
+        if self.tiles_x <= self.tile_select[0]*8 <= self.tiles_x + 36:
+            pyxel.rect(
+                86 + self.tile_select[0] *8 - self.tiles_x,
+                8 + self.tile_select[1] *8,
+                8,
+                1,
+                6
+            )
+            pyxel.rect(
+                86 + self.tile_select[0] *8 - self.tiles_x,
+                16 + self.tile_select[1] *8,
+                8,
+                1,
+                6
+            )
+            pyxel.rect(
+                86 + self.tile_select[0] *8 - self.tiles_x,
+                8 + self.tile_select[1] *8,
+                1,
+                8,
+                6
+            )
+            pyxel.rect(
+                94 + self.tile_select[0] *8 - self.tiles_x,
+                8 + self.tile_select[1] *8,
+                1,
+                9,
+                6
+            )
+        
+
+
+        # draw the monsters
+        for pos in self.monsters[self.world_id]:
+            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+                pyxel.blt(
+                    pos[0] - self.world_x + 8,
+                    pos[1] - self.world_y + 8,
+                    0,
+                    48, 88,
+                    8, 8,
+                    5
+                )
+
+        
+        # draw the chests
+        for pos, chest in self.chests[self.world_id].items():
+            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+                pyxel.blt(
+                    pos[0] - self.world_x + 8,
+                    pos[1] - self.world_y + 8,
+                    0,
+                    (56 if chest.state else 64),
+                    40,
+                    8, 8,
+                    5
+                )
+        
+
+        # draw the coin cubes
+        for pos in self.coin_cubes[self.world_id].keys():
+            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+                pyxel.blt(
+                    pos[0] - self.world_x + 8,
+                    pos[1] - self.world_y + 8,
+                    0,
+                    40,
+                    40,
+                    8, 8,
+                    5
+                )
+
+        
+        # draw the objects
+        for type_obj, list_pos in self.objects[self.world_id].items():
+            for pos in list_pos:
+                if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+                    # if it's a key
+                    if type_obj == "key":
+                        pyxel.blt(
+                            pos[0] - self.world_x + 8,
+                            pos[1] - self.world_y + 8,
+                            0,
+                            0,
+                            48,
+                            8, 8,
+                            5
+                        )
+                        
+                    # if it's a coin
+                    elif type_obj == "coin":
+                        pyxel.blt(
+                            pos[0] - self.world_x + 8,
+                            pos[1] - self.world_y + 8,
+                            0,
+                            48,
+                            40,
+                            8, 8,
+                            5
+                        )
+
+
+        # draw the player spawn
+        if (self.world_spawn == self.world_id and
+        self.world_x <= self.pos_spawn[0] < self.world_x +56 and
+        self.world_y <= self.pos_spawn[1] < self.world_x +88):
+            pyxel.blt(
+                self.pos_spawn[0] - self.world_x + 8,
+                self.pos_spawn[1] - self.world_y + 8,
+                0,
+                0,
+                72,
+                8, 8,
+                5
+            )
+
+
+
 
 
         # the arrows
@@ -3223,18 +3994,54 @@ class Editor:
 
 
         # tiles x
-        pyxel.rect(8, 105, 4, 5, self.color_3)      # left
-        pyxel.rect(68, 105, 4, 5, self.color_3)     # right
-        pyxel.rect(13, 105, 54, 5, self.color_3)    # middle
+        pyxel.rect(86, 105, 4, 5, self.color_3)      # left
+        pyxel.rect(118, 105, 4, 5, self.color_3)     # right
+        pyxel.rect(91, 105, 26, 5, self.color_3)     # middle
 
-        pyxel.pset(9, 107, self.color_2)
-        pyxel.pset(10, 106, self.color_2)
-        pyxel.pset(10, 107, self.color_2)
-        pyxel.pset(10, 108, self.color_2)
-        pyxel.pset(69, 107, self.color_2)
-        pyxel.pset(69, 106, self.color_2)
-        pyxel.pset(70, 107, self.color_2)
-        pyxel.pset(69, 108, self.color_2)
+        pyxel.pset(87, 107, self.color_2)
+        pyxel.pset(88, 106, self.color_2)
+        pyxel.pset(88, 107, self.color_2)
+        pyxel.pset(88, 108, self.color_2)
+        pyxel.pset(119, 107, self.color_2)
+        pyxel.pset(119, 106, self.color_2)
+        pyxel.pset(120, 107, self.color_2)
+        pyxel.pset(119, 108, self.color_2)
+
+
+        pyxel.text(
+            8,
+            115,
+            f"tilemap:{self.world_id}",
+            self.color_2
+        )
+
+
+        # -
+        pyxel.rect(50, 114, 7, 7, self.color_2)
+        pyxel.rect(51, 115, 5, 5, self.color_3)
+        pyxel.rect(52, 117, 3, 1, self.color_2)
+
+
+        # +
+        pyxel.rect(60, 114, 7, 7, self.color_2)
+        pyxel.rect(61, 115, 5, 5, self.color_3)
+        pyxel.rect(62, 117, 3, 1, self.color_2)
+        pyxel.rect(63, 116, 1, 3, self.color_2)
+
+
+
+        self.button_save.draw()
+
+
+
+        # if a menu is open
+        if self.menu_open:
+            self.menu.draw()
+
+        
+
+
+
 
 
 
