@@ -1147,7 +1147,7 @@ class CoinCube:
         self.steady = True
         self.delay = 0
         self.coin_delay = 60
-        self.coin_remaining = coins
+        self.coin_remaining = int(coins)
 
 
     def draw(self):
@@ -3049,7 +3049,7 @@ class NewWorld:
         """ chanage the menu """
         if menu == "editor":
             self.menu = "editor"
-            os.mkdir(f"./maps/{self.name_save}")
+            os.mkdir(f"maps/{self.name_save}")
             shutil.copy("base.pyxres", f"maps/{self.name_save}/world.pyxres")
             pyxel.load(f"maps/{self.name_save}/world.pyxres")
 
@@ -3060,6 +3060,7 @@ class NewWorld:
         pyxel.load(f"maps/{name}/world.pyxres")
         self.name_save = name
         self.editor.map = name
+        self.editor.load_save()
         self.menu = "editor"
 
 
@@ -3140,12 +3141,12 @@ class NameMenu:
 
 class MenuChest:
     """ class used to display the menu of options of the chests """
-    def __init__(self, x:int, y:int, state:bool, language:str) -> None:
+    def __init__(self, x:int, y:int, state:bool, language:str, coins:int=0) -> None:
         """ initialise a menu for the chests """
         self.x = x
         self.y = y
         self.state = state
-        self.coins = "0"
+        self.coins = str(coins)
         self.language = language
         self.menu_select = 0
         self.button_enter = Button(40, 88, 19, self)
@@ -3224,7 +3225,7 @@ class MenuChest:
 
 
     def save(self) -> list:
-        return [[self.x, self.y], self.coins, self.state]
+        return [[self.x, self.y], int(self.coins), self.state]
 
 
 
@@ -3239,11 +3240,11 @@ class MenuChest:
 
 class MenuCoinCube:
     """ class used to display the menu of options of the coin cubes """
-    def __init__(self, x:int, y:int, language:str) -> None:
+    def __init__(self, x:int, y:int, language:str, coins:int=0) -> None:
         """ initialise a menu for the coin cubes """
         self.x = x
         self.y = y
-        self.coins = "0"
+        self.coins = str(coins)
         self.language = language
         self.menu_select = 0
         self.button_enter = Button(40, 88, 19, self)
@@ -3322,7 +3323,7 @@ class MenuCoinCube:
 
 
     def save(self) -> list:
-        return [[self.x, self.y], self.coins]
+        return [[self.x, self.y], int(self.coins)]
 
 
 
@@ -3337,15 +3338,15 @@ class MenuCoinCube:
 
 class MenuDoor:
     """ class used to display the menu of options of a door """
-    def __init__(self, x:int, y:int, world_id:int, active:bool, language:str) -> None:
+    def __init__(self, x:int, y:int, world_id:int, active:bool, language:str, dest_world:int=1, dest_pos:list=[0, 0]) -> None:
         """ initialise a menu for the doors """
         self.x = x
         self.y = y
         self.world_id = world_id
         self.active = active
-        self.dest_world_id = 1
-        self.dest_x = "0"
-        self.dest_y = "0"
+        self.dest_world_id = dest_world
+        self.dest_x = str(dest_pos[0])
+        self.dest_y = str(dest_pos[1])
         self.language = language
         self.menu_select = 0
         self.button_enter = Button(40, 88, 19, self)
@@ -3552,7 +3553,7 @@ class Editor:
 
 
         self.delay_clic = 10
-        self.clic_time = 0
+        self.clic_time = -120
         self.tile_select = (0, 0)
         self.delay_save = 600
         self.save_time = 0
@@ -3574,6 +3575,7 @@ class Editor:
             dict_doors[str(id_w)] = []
             for door in doors.values():
                 dict_doors[str(id_w)].append(door.save())
+
 
 
         # chests
@@ -3602,7 +3604,6 @@ class Editor:
 
 
 
-
         dict_all = {
             "pos_doors" : dict_doors,
             "pos_monsters" : self.monsters,
@@ -3612,6 +3613,71 @@ class Editor:
             "pos_player" : self.pos_spawn,
             "pos_coin_cubes" : dict_coin_cubes
         }
+
+        Json.Save(dict_all, f"maps/{self.map}/options.json")
+
+
+
+
+
+    def load_save(self) -> None:
+        """ load a save """
+        dict_all = Json.Read(f"maps/{self.map}/options.json")
+        if dict_all is None:
+            return
+
+        # load all types of objects
+        doors = dict_all["pos_doors"]
+        self.doors = {}
+        for i in range(8):
+            self.doors[i] = {}
+            for door in doors[str(i)]:
+                pos = door[0]
+                self.doors[i][(pos[0], pos[1])] = MenuDoor(pos[0], pos[1], i, door[1], self.language, door[2], door[3])
+
+        
+        chests = dict_all["pos_chests"]
+        self.chests = {}
+        for i in range(8):
+            self.chests[i] = {}
+            for chest in chests[str(i)]:
+                pos = chest[0]
+                self.chests[i][(pos[0], pos[1])] = MenuChest(pos[0], pos[1], chest[2], self.language, int(chest[1]))
+
+        
+        coin_cubes = dict_all["pos_coin_cubes"]
+        self.coin_cubes = {}
+        for i in range(8):
+            self.coin_cubes[i] = {}
+            for cube in coin_cubes[str(i)]:
+                pos = cube[0]
+                self.coin_cubes[i][(pos[0], pos[1])] = MenuCoinCube(pos[0], pos[1], self.language, int(cube[1]))
+        
+
+        monsters = dict_all["pos_monsters"]
+        self.monsters = {}
+        for i in range(8):
+            self.monsters[i] = []
+            for pos in monsters[str(i)]:
+                self.monsters[i].append(pos)
+
+
+        self.pos_spawn = dict_all["pos_player"]
+        self.world_spawn = dict_all["world_spawn"]
+
+
+        objects = dict_all["pos_objects"]
+        self.objects = {}
+        for i in range(8):
+            self.objects[i] = {"key" : [], "coin": []}
+            for type_obj, world in objects[str(i)].items():
+                for pos in world:
+                    self.objects[i][type_obj].append(pos)
+
+
+        
+
+
 
     
 
@@ -3708,21 +3774,47 @@ class Editor:
                     tile_y = (m_y - 8 + self.world_y) // 8
 
                     # detect if we replace an object with properties
-                    tile_under = self.get_tile(tile_x, tile_y)
+                    tile_under = pyxel.tilemaps[self.world_id].pget(tile_x, tile_y)
+                    
+                    # if it's a door
                     if tile_under in TILE_DOOR:
-                        # if it's a door
-                        if tile_under in TILE_DOOR:
-                            del self.doors[self.world_id][(tile_x, tile_y)]
+                        # if it's the top
+                        if tile_under in [(1, 5), (2, 5)]:
+                            if (tile_x, tile_y +1) in self.doors[self.world_id]:
+                                del self.doors[self.world_id][(tile_x, tile_y +1)]
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y +1, ["0000"])
+                        else:
+                            if (tile_x, tile_y) in self.doors[self.world_id]:
+                                del self.doors[self.world_id][(tile_x, tile_y)]
+                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y -1, ["0000"])
                         
-                        # if it's a monster
-                        if tile_under in TILE_MONSTER:
-                            del self.monsters[self.world_id][(tile_x, tile_y)]
+                    # if it's a monster
+                    if tile_under in TILE_MONSTER:
+                        del self.monsters[self.world_id][(tile_x, tile_y)]
+
+
+                    # if it's a chest
+                    if (tile_x *8, tile_y *8) in self.chests[self.world_id]:
+                        del self.chests[self.world_id][(tile_x *8, tile_y *8)]
+
+                    # if it's a coin cube
+                    if (tile_x *8, tile_y *8) in self.coin_cubes[self.world_id]:
+                        del self.coin_cubes[self.world_id][(tile_x *8, tile_y *8)]
+
+
+                    # if it's a object
+                    for obj in self.objects[self.world_id].keys():
+                        if [tile_x *8, tile_y *8] in self.objects[self.world_id][obj]:
+                            self.objects[self.world_id][obj].remove([tile_x *8, tile_y *8])
+                    
 
 
                     # if the tile placed is special
                     # if it's a door
                     if self.tile_select in TILE_DOOR:
                         state = self.tile_select in TILE_DOOR_OPEN
+                        if self.tile_select in [(1, 5), (2, 5)]:
+                            tile_y += 1
                         self.doors[self.world_id][(tile_x, tile_y)] = MenuDoor(tile_x *8, tile_y *8, self.world_id, state, self.language)
                         self.menu_open = True
                         self.menu = self.doors[self.world_id][(tile_x, tile_y)]
@@ -3807,6 +3899,8 @@ class Editor:
         """ return the tile we're clicked on """
         tile_x = (m_x - 8 + self.world_x) // 8
         tile_y = (m_y - 8 + self.world_y) // 8
+        if tile_x < 0 or tile_y < 0:
+            return (0, 0)
         pyxel.tilemaps[self.world_id].pget(tile_x, tile_y)
 
 
@@ -3876,7 +3970,7 @@ class Editor:
 
         # draw the monsters
         for pos in self.monsters[self.world_id]:
-            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+            if self.world_x <= pos[0] <= self.world_x +56 and self.world_y <= pos[1] <= self.world_y +88:
                 pyxel.blt(
                     pos[0] - self.world_x + 8,
                     pos[1] - self.world_y + 8,
@@ -3889,7 +3983,7 @@ class Editor:
         
         # draw the chests
         for pos, chest in self.chests[self.world_id].items():
-            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+            if self.world_x <= pos[0] <= self.world_x +56 and self.world_y <= pos[1] <= self.world_y +88:
                 pyxel.blt(
                     pos[0] - self.world_x + 8,
                     pos[1] - self.world_y + 8,
@@ -3903,7 +3997,7 @@ class Editor:
 
         # draw the coin cubes
         for pos in self.coin_cubes[self.world_id].keys():
-            if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+            if self.world_x <= pos[0] <= self.world_x +56 and self.world_y <= pos[1] <= self.world_y +88:
                 pyxel.blt(
                     pos[0] - self.world_x + 8,
                     pos[1] - self.world_y + 8,
@@ -3918,7 +4012,7 @@ class Editor:
         # draw the objects
         for type_obj, list_pos in self.objects[self.world_id].items():
             for pos in list_pos:
-                if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_x +88:
+                if self.world_x <= pos[0] < self.world_x +56 and self.world_y <= pos[1] < self.world_y +88:
                     # if it's a key
                     if type_obj == "key":
                         pyxel.blt(
@@ -3947,7 +4041,7 @@ class Editor:
         # draw the player spawn
         if (self.world_spawn == self.world_id and
         self.world_x <= self.pos_spawn[0] < self.world_x +56 and
-        self.world_y <= self.pos_spawn[1] < self.world_x +88):
+        self.world_y <= self.pos_spawn[1] < self.world_y +88):
             pyxel.blt(
                 self.pos_spawn[0] - self.world_x + 8,
                 self.pos_spawn[1] - self.world_y + 8,
