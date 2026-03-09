@@ -67,7 +67,7 @@ class App:
         # variables
         self.whereami = "start menu"
         self.world = 0      # the tilemap
-        self.end_world = 3  # the world to teleport in the end menu
+        self.end_world = 8  # the world to teleport in the end menu
         self.pause = False
         self.language = "fr"
         self.cheats = False
@@ -2933,6 +2933,28 @@ class MapScreen:
 
     def update(self) -> str:
         """ Update the menu return the name of the save if a save is clicked """
+        # update the saves
+        if self.list_saves != os.listdir("maps"):
+            self.list_saves = os.listdir("maps")
+            self.number_menu = 0
+            self.dict_buttons = {}
+
+            if len(self.list_saves) > 4:
+                self.button_left = LittleButton(5, 60, "<")
+                self.button_right = LittleButton(110, 60, ">")
+
+            # set the right number of dict in the base dict
+            for k in range(len(self.list_saves)):
+                self.dict_buttons[k //4] = {}
+            self.number_menu = k //4
+
+            # add all the buttons in the right place in dict
+            for i, save in enumerate(self.list_saves):
+                y = i %4 *20 +45
+                self.dict_buttons[i //4][save] = Button(40, y, save, None)
+
+
+        # update
         if self.new_world.update():
             return "edit", ""
         if self.edit_btn.update():
@@ -3049,6 +3071,7 @@ class NewWorld:
         """ chanage the menu """
         if menu == "editor":
             self.menu = "editor"
+            self.editor.map = self.name_save
             os.mkdir(f"maps/{self.name_save}")
             shutil.copy("base.pyxres", f"maps/{self.name_save}/world.pyxres")
             pyxel.load(f"maps/{self.name_save}/world.pyxres")
@@ -3363,7 +3386,7 @@ class MenuDoor:
                 self.dest_world_id = max(1, self.dest_world_id -1)
             
             elif 70 < m_x < 77 and 27 < m_y < 34:
-                self.dest_world_id = min(7, self.dest_world_id +1)
+                self.dest_world_id = min(8, self.dest_world_id +1)
 
             # dest x and y
             elif 16 < m_x < 112 and 38 < m_y < 58:
@@ -3760,7 +3783,7 @@ class Editor:
 
 
 
-            if pyxel.btn(pyxel.MOUSE_BUTTON_LEFT) and self.clic_time >= 0:
+            if pyxel.btnp(pyxel.MOUSE_BUTTON_LEFT) and self.clic_time >= 0:
                 # if we select a tile
                 if 86 < m_x < 122 and 8 < m_y < 104:
                     tile_x = (m_x - 86 + self.tiles_x) // 8
@@ -3813,19 +3836,11 @@ class Editor:
                     # if it's a door
                     if self.tile_select in TILE_DOOR:
                         state = self.tile_select in TILE_DOOR_OPEN
-                        if self.tile_select in [(1, 5), (2, 5)]:
-                            tile_y += 1
-                        self.doors[self.world_id][(tile_x, tile_y)] = MenuDoor(tile_x *8, tile_y *8, self.world_id, state, self.language)
+                        if not self.tile_select in [(1, 5), (2, 5)]:
+                            tile_y -= 1
+                        self.doors[self.world_id][(tile_x *8, tile_y *8)] = MenuDoor(tile_x *8, tile_y *8, self.world_id, state, self.language)
                         self.menu_open = True
-                        self.menu = self.doors[self.world_id][(tile_x, tile_y)]
-                        
-                        # the type of door
-                        if self.tile_select in TILE_DOOR_CLOSE:
-                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y -1, ["0205"])
-                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y, ["0206"])
-                        else:
-                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y -1, ["0105"])
-                            pyxel.tilemaps[self.world_id].set(tile_x, tile_y, ["0106"])
+                        self.menu = self.doors[self.world_id][(tile_x *8, tile_y *8)]
                     
 
                     # if it's a monster
@@ -4049,6 +4064,20 @@ class Editor:
                 0,
                 72,
                 8, 8,
+                5
+            )
+
+
+        # draw the doors
+        for pos, door in self.doors[self.world_id].items():
+            pyxel.blt(
+                pos[0] - self.world_x + 8,
+                pos[1] - self.world_y + 8,
+                0,
+                (8 if door.active else 16),
+                40,
+                8,
+                16,
                 5
             )
 
