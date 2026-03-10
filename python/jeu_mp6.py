@@ -317,7 +317,7 @@ def lang(text:int, language:str) -> str:
             9: "retro",
             10: "retour",
             11: "options",
-            12: "Bravo, tu est rentre",
+            12: "Bravo, tu es rentre",
             13: "creer monde",
             14: "nom de la map",
             15: "editer",
