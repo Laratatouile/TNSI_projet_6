@@ -38,11 +38,7 @@ TILE_SOLID = TILE_FLOOR + TILE_FLOOR_AIR + TILE_SNOW
 TILE_GROUND = TILE_SOLID + TILE_STAIR_LEFT + TILE_STAIR_RIGHT + TILE_SNOW
 
 
-WORLD_COORDINATES = {
-    0: [(0, 128), (0, 128)],
-    1: [(0, 448), (0, 168)],
-    2: [(0, 664), (0, 128)]
-}
+WORLD_COORDINATES = { i: [(0, 256), (0, 256)] for i in range(8)}
 
 
 
